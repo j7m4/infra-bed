@@ -1,0 +1,4 @@
+contact_links:
+  - name: ⚠️ Production Use Disclaimer
+    url: https://github.com/j7m/otel-profiling-on-go
+    about: This is a PROOF-OF-CONCEPT project. Do not use in production environments without significant modifications and security hardening. 

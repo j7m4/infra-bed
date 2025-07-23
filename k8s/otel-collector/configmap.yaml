@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: observability
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+            
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+        
+      resource:
+        attributes:
+        - key: service.instance.id
+          from_attribute: k8s.pod.name
+          action: insert
+        - key: k8s.cluster.name
+          value: otel-profiling-cluster
+          action: insert
+          
+    exporters:
+      otlp/tempo:
+        endpoint: lgtm:4317
+        tls:
+          insecure: true
+        headers:
+          x-scope-orgid: "1"
+          
+      debug:
+        verbosity: detailed
+        sampling_initial: 5
+        sampling_thereafter: 200
+        
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [resource]
+          exporters: [otlp/tempo, debug]
+          
+        # Profiles will be sent as traces with special attributes
+        # until native profile support is available
+        profiles:
+          receivers: [otlp]
+          processors: [resource]
+          exporters: [otlp/tempo, debug]
