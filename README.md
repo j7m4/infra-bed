@@ -12,6 +12,14 @@
 > 
 > Use this code for learning, experimentation, and as a starting point only.
 
+## Example Output
+
+<img src="screenshot.png" alt="Grafana Pyroscope flame graph showing Go application profiling data" width="600">
+
+*Example: Grafana Pyroscope interface showing continuous profiling data from the sample Go application, including memory usage patterns and flame graph visualization.*
+
+## Summary
+
 This project demonstrates profiling integration with OpenTelemetry and Grafana Pyroscope on Kubernetes using pprof. It uses 
 [Alloy](https://grafana.com/oss/alloy-opentelemetry-collector/) 
 to scrape from pprof.
