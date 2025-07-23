@@ -3,9 +3,3 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: otel-profiling-cluster
 nodes:
   - role: control-plane
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            allow-privileged: "true"

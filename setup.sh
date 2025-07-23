@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Setting up OpenTelemetry Profiling environment..."
+# Load common configuration
+source "$(dirname "$0")/config.env"
+
+echo "🚀 Setting up ${PROJECT_NAME} environment..."
 
 # Check if kind is installed
 if ! command -v kind &> /dev/null; then
@@ -15,23 +18,20 @@ if ! command -v tilt &> /dev/null; then
     exit 1
 fi
 
-
-KIND_CONFIG="kind-config.yaml"
-
 # Create Kind cluster if it doesn't exist
-if ! kind get clusters | grep -q otel-profiling-cluster; then
-    echo "📦 Creating Kind cluster..."
-    kind create cluster --config=$KIND_CONFIG
+if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
+    echo "📦 Creating Kind cluster: $CLUSTER_NAME..."
+    kind create cluster --name="$CLUSTER_NAME" --config="$KIND_CONFIG"
 else
-    echo "✅ Kind cluster already exists"
+    echo "✅ Kind cluster '$CLUSTER_NAME' already exists"
 fi
 
 # Set kubectl context
 echo "🔧 Setting kubectl context..."
-kubectl config use-context kind-otel-profiling-cluster
+kubectl config use-context "$KUBECTL_CONTEXT"
 
 # Verify cluster is ready
 echo "🔍 Verifying cluster..."
-kubectl cluster-info --context kind-otel-profiling-cluster
+kubectl cluster-info --context "$KUBECTL_CONTEXT"
 
 echo "✅ Setup complete! Run 'tilt up' to start the development environment."

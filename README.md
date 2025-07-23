@@ -44,14 +44,24 @@ however, this would be a viable alternative at some point.
 ./setup.sh
 ```
 
-2. Start the development environment:
+2. (Optional) Test your setup:
+```bash
+./test.sh
+```
+
+3. Start the development environment:
 ```bash
 tilt up
 ```
 
-3. Access Grafana at http://localhost:3000 (admin/admin)
+4. Access Grafana at http://localhost:3000 (admin/admin)
 
-4. The environment includes:
+5. When finished, clean up resources:
+```bash
+./teardown.sh
+```
+
+The environment includes:
    - Kind cluster
    - Grafana LGTM stack (Loki, Grafana, Tempo, Mimir, Pyroscope)
    - Grafana Alloy for scraping pprof endpoints

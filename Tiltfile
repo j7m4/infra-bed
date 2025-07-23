@@ -25,16 +25,14 @@ k8s_resource('lgtm',
     '3200:3200',  # Tempo HTTP
     '4317:4317',  # OTLP gRPC
   ],
-  labels=['observability'],
-  resource_deps=['namespace:observability']
+  labels=['o11y']
 )
 
 # Deploy Pyroscope
 k8s_yaml('k8s/pyroscope/deployment.yaml')
 k8s_resource('pyroscope',
   port_forwards=['4040:4040'],
-  labels=['observability'],
-  resource_deps=['namespace:observability']
+  labels=['o11y']
 )
 
 # Deploy Grafana Alloy
@@ -43,7 +41,7 @@ k8s_yaml([
   'k8s/alloy/deployment.yaml'
 ])
 k8s_resource('alloy',
-  labels=['observability'],
+  labels=['o11y'],
   resource_deps=['lgtm', 'pyroscope']
 )
 
@@ -104,20 +102,24 @@ k8s_resource('sample-app',
 # Load testing commands
 local_resource('test-fibonacci',
   cmd='curl http://localhost:8080/cpu/fibonacci/40',
-  labels=['testing']
+  labels=['testing'],
+  resource_deps=['sample-app']
 )
 
 local_resource('test-prime',
   cmd='curl http://localhost:8080/cpu/prime/100000',
-  labels=['testing']
+  labels=['testing'],
+  resource_deps=['sample-app']
 )
 
 local_resource('test-hash',
   cmd='curl http://localhost:8080/cpu/hash/100000',
-  labels=['testing']
+  labels=['testing'],
+  resource_deps=['sample-app']
 )
 
 local_resource('test-mixed',
   cmd='curl http://localhost:8080/workload/mixed',
-  labels=['testing']
+  labels=['testing'],
+  resource_deps=['sample-app']
 )
