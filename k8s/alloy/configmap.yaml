@@ -41,98 +41,31 @@ data:
       }
     }
 
-    // Convert pprof data to Prometheus metrics, then to OTEL metrics
-    // DOES NOT WORK
-    /*
-    prometheus.scrape "pprof_cpu" {
-      targets = [
-        {
-          __address__ = "sample-app.default:6060",
-          __scheme__  = "http",
-          __metrics_path__ = "/debug/pprof/profile?seconds=10",
-        },
-      ]
-      forward_to = [otelcol.receiver.prometheus.default.receiver]
-      job_name   = "sample-app-pprof-cpu"
-      scrape_interval = "30s"
-      scrape_timeout  = "15s"
-    }
-
-    prometheus.scrape "pprof_heap" {
-      targets = [
-        {
-          __address__ = "sample-app.default:6060",
-          __scheme__  = "http",
-          __metrics_path__ = "/debug/pprof/heap",
-        },
-      ]
-      forward_to = [otelcol.receiver.prometheus.default.receiver]
-      job_name   = "sample-app-pprof-heap"
-      scrape_interval = "30s"
-      scrape_timeout  = "15s"
-    }
-
-    prometheus.scrape "pprof_goroutine" {
-      targets = [
-        {
-          __address__ = "sample-app.default:6060",
-          __scheme__  = "http",
-          __metrics_path__ = "/debug/pprof/goroutine",
-        },
-      ]
-      forward_to = [otelcol.receiver.prometheus.default.receiver]
-      job_name   = "sample-app-pprof-goroutine"
-      scrape_interval = "30s"
-      scrape_timeout  = "15s"
-    }
-
-    otelcol.receiver.prometheus "default" {
-      output {
-        metrics = [otelcol.processor.batch.default.input]
-      }
-    }
-
-    otelcol.processor.batch "metrics" {
-      output {
-        metrics = [otelcol.exporter.otlp.grafana.input]
-      }
-    }
-
-    otelcol.exporter.otlp "grafana" {
-      client {
-        endpoint = "lgtm:4317"
-        tls {
-          insecure = true
-        }
-      }
-    }
-    */
-
     // Scraping with pyroscope
     pyroscope.scrape "pprof" {
       targets = [
         {
-          __address__ = "sample-app.default:6060",
+          __address__ = "go-spikes.default:6060",
           __scheme__  = "http",
           __profile_path__ = "/debug/pprof/profile?seconds=10",
-          service_name = "sample-app",
-          job = "sample-app-cpu",
+          service_name = "go-spikes",
+          job = "go-spikes-cpu",
           profile_type = "cpu",
         },
         {
-          __address__ = "sample-app.default:6060",
+          __address__ = "go-spikes.default:6060",
           __scheme__  = "http",
           __profile_path__ = "/debug/pprof/heap",
-          service_name = "sample-app",
-          job = "sample-app-heap",
+          service_name = "go-spikes",
+          job = "go-spikes-heap",
           profile_type = "heap",
         },
         {
-          __address__ = "sample-app.default:6060",
+          __address__ = "go-spikes.default:6060",
           __scheme__  = "http",
           __profile_path__ = "/debug/pprof/goroutine",
-          service_name = "sample-app",
-          job = "sample-app-goroutine",
+          service_name = "go-spikes",
+          job = "go-spikes-goroutine",
           profile_type = "goroutine",
         },
       ]

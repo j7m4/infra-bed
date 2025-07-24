@@ -1,4 +1,4 @@
-module github.com/otel-profiling-on-go/sample-app
+module github.com/go-infra-spikes/go-spikes
 
 go 1.24
 

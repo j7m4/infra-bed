@@ -6,7 +6,7 @@ COPY go.mod go.sum ./
 RUN go mod tidy
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o sample-app ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o go-spikes ./cmd/main.go
 
 FROM alpine:latest
 
@@ -14,8 +14,8 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-COPY --from=builder /app/sample-app .
+COPY --from=builder /app/go-spikes .
 
 EXPOSE 8080 6060
 
-CMD ["./sample-app"]
+CMD ["./go-spikes"]

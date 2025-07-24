@@ -4,12 +4,12 @@
 load('ext://namespace', 'namespace_create')
 
 # Check if Kind cluster exists and use tacops-dev as fallback
-cluster_exists = str(local('kind get clusters | grep -q otel-profiling-cluster && echo "exists" || echo "not found"', quiet=True)).strip()
+cluster_exists = str(local('kind get clusters | grep -q go-infra-spikes && echo "exists" || echo "not found"', quiet=True)).strip()
 if cluster_exists == "not found":
-    print("⚠️  Kind cluster 'otel-profiling-cluster' not found. Using tacops-dev cluster instead.")
+    print("⚠️  Kind cluster 'go-infra-spikes' not found. Using tacops-dev cluster instead.")
     cluster_name = 'tacops-dev'
 else:
-    cluster_name = 'otel-profiling-cluster'
+    cluster_name = 'go-infra-spikes'
 
 # Set kubectl context
 local('kubectl config use-context kind-' + cluster_name, quiet=True)
@@ -83,43 +83,26 @@ local_resource('get-pods-cmd',
 
 # Build and deploy sample app
 docker_build(
-  'sample-app:dev',
-  './sample-app',
-  dockerfile='./sample-app/Dockerfile',
+  'go-spikes:dev',
+  './go-spikes',
+  dockerfile='./go-spikes/Dockerfile',
   live_update=[
-    sync('./sample-app/', '/app/'),
-    run('cd /app && go build -o /root/sample-app ./cmd/main.go', trigger=['**/*.go'])
+    sync('./go-spikes/', '/app/'),
+    run('cd /app && go build -o /root/go-spikes ./cmd/main.go', trigger=['**/*.go'])
   ]
 )
 
-k8s_yaml('sample-app/k8s/deployment.yaml')
-k8s_resource('sample-app',
+k8s_yaml('go-spikes/k8s/deployment.yaml')
+k8s_resource('go-spikes',
   port_forwards=['8080:8080', '6060:6060'],
   labels=['apps'],
   resource_deps=['alloy']
 )
 
-# Load testing commands
-local_resource('test-fibonacci',
+# Spike commands
+local_resource('fibonacci-spike',
   cmd='curl http://localhost:8080/cpu/fibonacci/40',
-  labels=['testing'],
-  resource_deps=['sample-app']
+  labels=['spikes'],
+  resource_deps=['go-spikes']
 )
 
-local_resource('test-prime',
-  cmd='curl http://localhost:8080/cpu/prime/100000',
-  labels=['testing'],
-  resource_deps=['sample-app']
-)
-
-local_resource('test-hash',
-  cmd='curl http://localhost:8080/cpu/hash/100000',
-  labels=['testing'],
-  resource_deps=['sample-app']
-)
-
-local_resource('test-mixed',
-  cmd='curl http://localhost:8080/workload/mixed',
-  labels=['testing'],
-  resource_deps=['sample-app']
-)

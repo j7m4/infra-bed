@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sample-app
+  name: go-spikes
   namespace: default
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: sample-app
+      app: go-spikes
   template:
     metadata:
       labels:
-        app: sample-app
+        app: go-spikes
       annotations:
         # Annotations for identification
-        app: sample-app
+        app: go-spikes
     spec:
       containers:
-      - name: sample-app
-        image: sample-app:dev
+      - name: go-spikes
+        image: go-spikes:dev
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -29,7 +29,7 @@ spec:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "alloy.observability:4317"
         - name: OTEL_SERVICE_NAME
-          value: "sample-app"
+          value: "go-spikes"
         - name: PYROSCOPE_ADDRESS
           value: "http://lgtm.observability:4040"
         resources:
@@ -55,11 +55,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sample-app
+  name: go-spikes
   namespace: default
 spec:
   selector:
-    app: sample-app
+    app: go-spikes
   ports:
   - name: http
     port: 8080

@@ -12,24 +12,10 @@
 > 
 > Use this code for learning, experimentation, and as a starting point only.
 
-## Example Output
-
-<img src="screenshot.png" alt="Grafana Pyroscope flame graph showing Go application profiling data" width="600">
-
-*Example: Grafana Pyroscope interface showing continuous profiling data from the sample Go application, including memory usage patterns and flame graph visualization.*
-
 ## Summary
 
-This project demonstrates profiling integration with OpenTelemetry and Grafana Pyroscope on Kubernetes using pprof. It uses 
-[Alloy](https://grafana.com/oss/alloy-opentelemetry-collector/) 
-to scrape from pprof.
-
-There is an attempt to expose profiling data same data as OTEL 
-metrics (disabled, not functional).
-
-This does **NOT** the proposed OTEL support for 
-[profiling](https://github.com/open-telemetry/opentelemetry-specification/blob/main/oteps/profiles/0212-profiling-vision.md); 
-however, this would be a viable alternative at some point.
+This project contains various spikes for infrastructure testing. See each of the **Spikes** in `go-spikes/README.md`
+for details.
 
 ## Prerequisites
 
@@ -69,7 +55,7 @@ The environment includes:
 
 ## Architecture
 
-- **Sample App**: Go application with pprof endpoints and otel-profiling-go for trace correlation
+- **Go Spikes**: Go application that contains spike code, along with with pprof endpoints for trace correlation
 - **Grafana Alloy**: Scrapes pprof endpoints and forwards to Pyroscope
 - **Grafana LGTM**: Stores and visualizes profiles, logs, metrics, and traces
 - **Pyroscope**: Integrated in LGTM for continuous profiling
