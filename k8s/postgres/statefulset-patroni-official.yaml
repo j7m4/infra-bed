@@ -1,0 +1,214 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: db
+spec:
+  serviceName: postgres-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: patroni/patroni:3.2.2-bookworm
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PATRONI_SCOPE
+          value: "postgres-cluster"
+        - name: PATRONI_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: PATRONI_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: PATRONI_KUBERNETES_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: PATRONI_KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: PATRONI_KUBERNETES_LABELS
+          value: "{app: postgres}"
+        - name: PATRONI_KUBERNETES_SCOPE_LABEL
+          value: "cluster-name"
+        - name: PATRONI_KUBERNETES_ROLE_LABEL
+          value: "role"
+        - name: PATRONI_ETCD3_HOSTS
+          value: "postgres-etcd:2379"
+        - name: PATRONI_RESTAPI_LISTEN
+          value: "0.0.0.0:8008"
+        - name: PATRONI_RESTAPI_CONNECT_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: PATRONI_POSTGRESQL_LISTEN
+          value: "0.0.0.0:5432"
+        - name: PATRONI_POSTGRESQL_CONNECT_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: PATRONI_POSTGRESQL_DATA_DIR
+          value: "/var/lib/postgresql/data/pgdata"
+        - name: PATRONI_SUPERUSER_USERNAME
+          value: postgres
+        - name: PATRONI_SUPERUSER_PASSWORD
+          value: postgres_password
+        - name: PATRONI_REPLICATION_USERNAME
+          value: replicator
+        - name: PATRONI_REPLICATION_PASSWORD
+          value: repl_password
+        - name: PATRONI_admin_PASSWORD
+          value: admin_password
+        - name: PATRONI_admin_OPTIONS
+          value: "LOGIN,SUPERUSER"
+        - name: PATRONI_app_PASSWORD
+          value: app_password
+        - name: PATRONI_app_OPTIONS
+          value: "LOGIN,CREATEDB"
+        - name: PATRONI_LOG_LEVEL
+          value: INFO
+        - name: PATRONI_POSTGRESQL_PGPASS
+          value: "/tmp/pgpass"
+        - name: POSTGRESQL_VOLUME_DIR
+          value: "/var/lib/postgresql"
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: postgres_password
+        ports:
+        - containerPort: 5432
+          name: postgresql
+        - containerPort: 8008
+          name: patroni
+        volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql/data
+        command:
+          - /bin/bash
+          - -c
+          - |
+            # Create required directories
+            mkdir -p "$PGDATA"
+            chmod 700 "$PGDATA"
+            
+            # Create minimal Patroni configuration
+            cat > /tmp/patroni.yml <<EOF
+            scope: ${PATRONI_SCOPE}
+            namespace: ${PATRONI_NAMESPACE}
+            name: ${PATRONI_NAME}
+            
+            restapi:
+              listen: ${PATRONI_RESTAPI_LISTEN}
+              connect_address: ${PATRONI_KUBERNETES_POD_IP}:8008
+            
+            etcd3:
+              hosts: ${PATRONI_ETCD3_HOSTS}
+            
+            bootstrap:
+              dcs:
+                ttl: 30
+                loop_wait: 10
+                retry_timeout: 10
+                maximum_lag_on_failover: 1048576
+                postgresql:
+                  use_pg_rewind: true
+                  use_slots: true
+                  parameters:
+                    max_connections: 100
+                    shared_buffers: 256MB
+                    effective_cache_size: 1GB
+                    wal_level: replica
+                    hot_standby: "on"
+                    wal_log_hints: "on"
+                    max_wal_senders: 10
+                    max_replication_slots: 10
+              
+              initdb:
+                - encoding: UTF8
+                - data-checksums
+              
+              pg_hba:
+                - local all all trust
+                - host all all 127.0.0.1/32 trust
+                - host all all ::1/128 trust
+                - local replication all trust
+                - host replication all all md5
+                - host all all all md5
+              
+              users:
+                admin:
+                  password: ${PATRONI_admin_PASSWORD}
+                  options:
+                    - createrole
+                    - createdb
+                app:
+                  password: ${PATRONI_app_PASSWORD}
+                  options:
+                    - createdb
+            
+            postgresql:
+              listen: ${PATRONI_POSTGRESQL_LISTEN}
+              connect_address: ${PATRONI_KUBERNETES_POD_IP}:5432
+              data_dir: ${PATRONI_POSTGRESQL_DATA_DIR}
+              authentication:
+                replication:
+                  username: ${PATRONI_REPLICATION_USERNAME}
+                  password: ${PATRONI_REPLICATION_PASSWORD}
+                superuser:
+                  username: ${PATRONI_SUPERUSER_USERNAME}
+                  password: ${PATRONI_SUPERUSER_PASSWORD}
+              parameters:
+                unix_socket_directories: '/var/run/postgresql'
+            
+            tags:
+              nofailover: false
+              noloadbalance: false
+              clonefrom: false
+              nosync: false
+            EOF
+            
+            # Start Patroni
+            exec python3 /usr/local/bin/patroni /tmp/patroni.yml
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8008
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8008
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+  volumeClaimTemplates:
+  - metadata:
+      name: pgdata
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi

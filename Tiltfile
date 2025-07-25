@@ -16,6 +16,7 @@ local('kubectl config use-context kind-' + cluster_name, quiet=True)
 
 # Create namespace
 namespace_create('observability')
+namespace_create('db')
 
 # Deploy Grafana LGTM stack
 k8s_yaml('k8s/lgtm/deployment.yaml', allow_duplicates=True)
@@ -104,5 +105,165 @@ local_resource('fibonacci-spike',
   cmd='curl http://localhost:8080/cpu/fibonacci/40',
   labels=['spikes'],
   resource_deps=['go-spikes']
+)
+
+# Deploy MySQL with Group Replication
+k8s_yaml([
+  'k8s/mysql/configmap.yaml',
+  'k8s/mysql/services.yaml',
+  'k8s/mysql/statefulset.yaml',
+  'k8s/mysql/monitor-primary.yaml'
+])
+
+k8s_resource('mysql',
+  port_forwards=['3306:3306'],
+  labels=['data'],
+  resource_deps=['lgtm']
+)
+
+k8s_resource('mysql-primary-monitor',
+  labels=['data'],
+  resource_deps=['mysql']
+)
+
+# MySQL helper commands
+local_resource('mysql-status',
+  cmd='kubectl exec -n db mysql-0 -- mysql -u root -proot_password -e "SELECT * FROM performance_schema.replication_group_members\\G"',
+  labels=['mysql-ops'],
+  resource_deps=['mysql']
+)
+
+local_resource('mysql-primary',
+  cmd='kubectl exec -n db mysql-0 -- mysql -u root -proot_password -e "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE=\'PRIMARY\'\\G"',
+  labels=['mysql-ops'],
+  resource_deps=['mysql']
+)
+
+local_resource('mysql-init-group',
+  cmd='kubectl apply -f k8s/mysql/init-job.yaml',
+  labels=['mysql-ops'],
+  resource_deps=['mysql']
+)
+
+# Failover testing commands
+local_resource('mysql-kill-primary',
+  cmd='''
+    PRIMARY=$(kubectl exec -n db mysql-0 -- mysql -u root -proot_password -Nse "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE='PRIMARY'" | cut -d'.' -f1)
+    echo "Current primary: $PRIMARY"
+    echo "Killing primary pod..."
+    kubectl delete pod -n db $PRIMARY --grace-period=0 --force
+    echo "Primary pod killed. Group Replication will elect new primary."
+  ''',
+  labels=['mysql-failover'],
+  resource_deps=['mysql']
+)
+
+local_resource('mysql-test-write',
+  cmd='kubectl exec -n db mysql-0 -- mysql -u root -proot_password -e "USE testdb; INSERT INTO test_table (data) VALUES (\'Test write at $(date)\'); SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
+  labels=['mysql-failover'],
+  resource_deps=['mysql']
+)
+
+local_resource('mysql-test-read',
+  cmd='kubectl exec -n db mysql-1 -- mysql -u root -proot_password -e "USE testdb; SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
+  labels=['mysql-failover'],
+  resource_deps=['mysql']
+)
+
+# MySQL connection helper
+local_resource('mysql-connect',
+  cmd='echo "MySQL connection string: mysql -h localhost -P 3306 -u app -papp_password"',
+  labels=['mysql-ops']
+)
+
+# Deploy PostgreSQL
+# Option 1: Use Official PostgreSQL (simplest, manual failover)
+k8s_yaml([
+  'k8s/postgres/services.yaml',
+  'k8s/postgres/statefulset-official.yaml'
+])
+
+# Option 2: Use Bitnami PostgreSQL with Repmgr (automatic failover)
+# k8s_yaml([
+#   'k8s/postgres/services.yaml',
+#   'k8s/postgres/statefulset-simple.yaml',
+#   'k8s/postgres/label-updater-repmgr.yaml'
+# ])
+
+# Option 3: Use Patroni (uncomment below and comment above)
+# k8s_yaml([
+#   'k8s/postgres/etcd.yaml',
+#   'k8s/postgres/configmap.yaml',
+#   'k8s/postgres/services.yaml',
+#   'k8s/postgres/statefulset-patroni-official.yaml',
+#   'k8s/postgres/label-updater.yaml'
+# ])
+
+# Only needed if using Patroni with etcd
+# k8s_resource('postgres-etcd',
+#   labels=['data'],
+#   resource_deps=['lgtm']
+# )
+
+k8s_resource('postgres',
+  port_forwards=['5432:5432'],
+  labels=['data'],
+  resource_deps=['lgtm']
+)
+
+# Only needed if using repmgr or patroni
+# k8s_resource('postgres-label-updater',
+#   labels=['data'],
+#   resource_deps=['postgres']
+# )
+
+# PostgreSQL helper commands
+local_resource('postgres-status',
+  cmd='for i in 0 1 2; do echo "=== postgres-$i ==="; kubectl exec -n db postgres-$i -- pg_isready -U postgres && echo "Ready" || echo "Not ready"; done',
+  labels=['postgres-ops'],
+  resource_deps=['postgres']
+)
+
+local_resource('postgres-list-dbs',
+  cmd='kubectl exec -n db postgres-0 -- psql -U postgres -c "\\l"',
+  labels=['postgres-ops'],
+  resource_deps=['postgres']
+)
+
+# Failover testing commands (manual for official PostgreSQL)
+local_resource('postgres-kill-pod',
+  cmd='''
+    echo "Killing postgres-0 pod..."
+    kubectl delete pod -n db postgres-0 --grace-period=0 --force
+    echo "Pod killed. Note: With official PostgreSQL, failover is manual."
+  ''',
+  labels=['postgres-failover'],
+  resource_deps=['postgres']
+)
+
+local_resource('postgres-manual-failover-info',
+  cmd='echo "Official PostgreSQL requires manual failover configuration. Consider using Option 2 (Bitnami with repmgr) or Option 3 (Patroni) for automatic failover."',
+  labels=['postgres-failover']
+)
+
+local_resource('postgres-test-write',
+  cmd='''kubectl exec -n db postgres-0 -- psql -U postgres -d postgres -c "
+    CREATE TABLE IF NOT EXISTS test_table (id SERIAL PRIMARY KEY, data TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+    INSERT INTO test_table (data) VALUES (\'Test write at $(date)\');
+    SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"''',
+  labels=['postgres-failover'],
+  resource_deps=['postgres']
+)
+
+local_resource('postgres-test-read',
+  cmd='kubectl exec -n db postgres-1 -- psql -U postgres -d postgres -c "SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
+  labels=['postgres-failover'],
+  resource_deps=['postgres']
+)
+
+# PostgreSQL connection helper
+local_resource('postgres-connect',
+  cmd='echo "PostgreSQL connection string: psql -h localhost -p 5432 -U app -d postgres\\nPassword: app_password"',
+  labels=['postgres-ops']
 )
 

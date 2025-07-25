@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: db
+spec:
+  serviceName: postgres-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: zalando/spilo-15:3.0-p1
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PGVERSION
+          value: "15"
+        - name: SCOPE
+          value: "postgres-cluster"
+        - name: PGUSER_SUPERUSER
+          value: postgres
+        - name: PGPASSWORD_SUPERUSER
+          value: postgres_password
+        - name: PGUSER_ADMIN
+          value: admin
+        - name: PGPASSWORD_ADMIN
+          value: admin_password
+        - name: PGUSER_STANDBY
+          value: replicator
+        - name: PGPASSWORD_STANDBY
+          value: repl_password
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: ETCD_HOSTS
+          value: "postgres-etcd:2379"
+        - name: KUBERNETES_SCOPE_LABEL
+          value: "cluster-name"
+        - name: KUBERNETES_ROLE_LABEL
+          value: "spilo-role"
+        - name: KUBERNETES_USE_CONFIGMAPS
+          value: "true"
+        - name: PATRONI_KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: PATRONI_KUBERNETES_LABELS
+          value: "{app: postgres, cluster-name: postgres-cluster}"
+        - name: PATRONI_SUPERUSER_USERNAME
+          value: postgres
+        - name: PATRONI_SUPERUSER_PASSWORD
+          value: postgres_password
+        - name: PATRONI_REPLICATION_USERNAME
+          value: replicator
+        - name: PATRONI_REPLICATION_PASSWORD
+          value: repl_password
+        - name: PATRONI_admin_PASSWORD
+          value: admin_password
+        - name: PATRONI_admin_OPTIONS
+          value: "CREATEDB,CREATEROLE"
+        - name: SPILO_CONFIGURATION
+          value: |
+            bootstrap:
+              dcs:
+                ttl: 30
+                loop_wait: 10
+                retry_timeout: 10
+                maximum_lag_on_failover: 33554432
+            postgresql:
+              parameters:
+                max_connections: 100
+                shared_buffers: 256MB
+                effective_cache_size: 1GB
+                wal_level: replica
+                hot_standby: "on"
+                wal_log_hints: "on"
+                max_wal_senders: 10
+                max_replication_slots: 10
+        ports:
+        - containerPort: 5432
+          name: postgresql
+        - containerPort: 8008
+          name: patroni
+        volumeMounts:
+        - name: pgdata
+          mountPath: /home/postgres/pgdata
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 8008
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /liveness
+            port: 8008
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+  volumeClaimTemplates:
+  - metadata:
+      name: pgdata
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi

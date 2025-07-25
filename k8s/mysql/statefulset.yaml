@@ -1,0 +1,156 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: db
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  serviceName: mysql-headless
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      initContainers:
+      - name: init-mysql
+        image: mysql:8.0
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: MYSQL_ROOT_PASSWORD
+          value: "root_password"
+        command:
+        - bash
+        - "-c"
+        - |
+          set -ex
+          # Extract ordinal from pod name
+          [[ $POD_NAME =~ -([0-9]+)$ ]] || exit 1
+          ordinal=${BASH_REMATCH[1]}
+          echo "[mysqld]" > /mnt/conf.d/server-id.cnf
+          echo "server-id=$((100 + $ordinal))" >> /mnt/conf.d/server-id.cnf
+          echo "loose-group_replication_local_address=\"$POD_NAME.mysql-headless.db.svc.cluster.local:33061\"" >> /mnt/conf.d/server-id.cnf
+          echo "report_host=$POD_NAME.mysql-headless.db.svc.cluster.local" >> /mnt/conf.d/server-id.cnf
+          
+          # Copy appropriate config
+          if [[ $ordinal -eq 0 ]]; then
+            cp /mnt/config-map/primary.cnf /mnt/conf.d/
+          else
+            cp /mnt/config-map/replica.cnf /mnt/conf.d/
+          fi
+          
+          # The official MySQL image will handle initialization automatically
+          # when MYSQL_ROOT_PASSWORD is set
+        volumeMounts:
+        - name: conf
+          mountPath: /mnt/conf.d
+        - name: config-map
+          mountPath: /mnt/config-map
+        - name: data
+          mountPath: /var/lib/mysql
+          subPath: mysql
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "root_password"
+        - name: MYSQL_DATABASE
+          value: "test"
+        - name: MYSQL_USER
+          value: "app"
+        - name: MYSQL_PASSWORD
+          value: "app_password"
+        ports:
+        - name: mysql
+          containerPort: 3306
+        - name: group-repl
+          containerPort: 33061
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+          subPath: mysql
+        - name: conf
+          mountPath: /etc/mysql/conf.d
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        livenessProbe:
+          exec:
+            command:
+            - bash
+            - "-c"
+            - |
+              mysqladmin ping -h localhost --silent || mysqladmin ping -h localhost -u root -proot_password --silent
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - bash
+            - "-c"
+            - |
+              # Try connecting without password first (for initial setup), then with password
+              if mysql -h localhost -u root -e "SELECT 1" >/dev/null 2>&1; then
+                mysql -h localhost -u root -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='mysql'" >/dev/null 2>&1
+              else
+                mysql -h localhost -u root -proot_password -e "SELECT 1" >/dev/null 2>&1 && \
+                mysql -h localhost -u root -proot_password -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='mysql'" >/dev/null 2>&1
+              fi
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+      - name: xtrabackup
+        image: percona/percona-xtrabackup:8.0
+        ports:
+        - name: xtrabackup
+          containerPort: 3307
+        command:
+        - bash
+        - "-c"
+        - |
+          cd /var/lib/mysql
+          
+          # Wait for MySQL to be ready
+          until mysqladmin ping -h 127.0.0.1 --password=root_password --silent; do
+            echo "Waiting for MySQL to be ready..."
+            sleep 5
+          done
+          
+          # For now, just sleep to keep container running
+          # In production, you'd use this for backup/restore operations
+          while true; do
+            sleep 3600
+          done
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+          subPath: mysql
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+      volumes:
+      - name: conf
+        emptyDir: {}
+      - name: config-map
+        configMap:
+          name: mysql-config
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi

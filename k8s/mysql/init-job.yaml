@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-init-group-replication
+  namespace: db
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init-group-replication
+        image: mysql:8.0
+        command:
+        - bash
+        - "-c"
+        - |
+          set -ex
+          
+          # Wait for all MySQL pods to be ready
+          for i in 0 1 2; do
+            echo "Waiting for mysql-$i to be ready..."
+            until mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -proot_password -e "SELECT 1" &> /dev/null; do
+              sleep 5
+            done
+          done
+          
+          echo "All MySQL instances are ready. Initializing Group Replication..."
+          
+          # Setup users on all nodes
+          for i in 0 1 2; do
+            mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
+          -- Install Group Replication plugin if not already installed
+          INSTALL PLUGIN group_replication SONAME 'group_replication.so';
+          
+          CREATE USER IF NOT EXISTS 'grp_repl'@'%' IDENTIFIED BY 'grp_repl_password';
+          GRANT REPLICATION SLAVE, CONNECTION_ADMIN, BACKUP_ADMIN, GROUP_REPLICATION_STREAM ON *.* TO 'grp_repl'@'%';
+          GRANT SELECT ON performance_schema.* TO 'grp_repl'@'%';
+          
+          CREATE USER IF NOT EXISTS 'app'@'%' IDENTIFIED BY 'app_password';
+          GRANT ALL PRIVILEGES ON *.* TO 'app'@'%';
+          
+          FLUSH PRIVILEGES;
+          
+          SET SQL_LOG_BIN=0;
+          CHANGE REPLICATION SOURCE TO SOURCE_USER='grp_repl', SOURCE_PASSWORD='grp_repl_password' FOR CHANNEL 'group_replication_recovery';
+          SET SQL_LOG_BIN=1;
+          EOF
+          done
+          
+          # Bootstrap Group Replication on mysql-0
+          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
+          SET GLOBAL group_replication_group_name='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+          SET GLOBAL group_replication_bootstrap_group=ON;
+          START GROUP_REPLICATION;
+          SET GLOBAL group_replication_bootstrap_group=OFF;
+          
+          -- Wait for member to be online
+          SELECT SLEEP(5);
+          SELECT * FROM performance_schema.replication_group_members;
+          EOF
+          
+          # Join other nodes to the group
+          for i in 1 2; do
+            mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
+          SET GLOBAL group_replication_group_name='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+          START GROUP_REPLICATION;
+          
+          -- Wait for member to join
+          SELECT SLEEP(5);
+          SELECT * FROM performance_schema.replication_group_members;
+          EOF
+          done
+          
+          # Verify group status
+          echo "Group Replication Status:"
+          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -proot_password -e "SELECT * FROM performance_schema.replication_group_members;"
+          
+          # Create test database
+          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
+          CREATE DATABASE IF NOT EXISTS testdb;
+          USE testdb;
+          CREATE TABLE IF NOT EXISTS test_table (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            data VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          INSERT INTO test_table (data) VALUES ('Initial data from primary');
+          EOF
+          
+          echo "Group Replication initialized successfully!"
