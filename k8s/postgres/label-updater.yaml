@@ -53,7 +53,7 @@ spec:
       serviceAccountName: postgres-label-updater
       containers:
       - name: updater
-        image: bitnami/kubectl:latest
+        image: bitnami/kubectl:1.33.3
         command:
         - bash
         - /scripts/update-labels.sh

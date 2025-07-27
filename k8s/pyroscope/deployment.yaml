@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: pyroscope
-        image: grafana/pyroscope:latest
+        image: grafana/pyroscope:main-6d0f426
         ports:
         - containerPort: 4040
           name: http

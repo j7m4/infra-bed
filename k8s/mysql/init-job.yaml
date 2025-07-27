@@ -10,6 +10,12 @@ spec:
       containers:
       - name: init-group-replication
         image: mysql:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: root-password
         command:
         - bash
         - "-c"
@@ -19,7 +25,7 @@ spec:
           # Wait for all MySQL pods to be ready
           for i in 0 1 2; do
             echo "Waiting for mysql-$i to be ready..."
-            until mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -proot_password -e "SELECT 1" &> /dev/null; do
+            until mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" &> /dev/null; do
               sleep 5
             done
           done
@@ -28,8 +34,9 @@ spec:
           
           # Setup users on all nodes
           for i in 0 1 2; do
-            mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
-          -- Install Group Replication plugin if not already installed
+            mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD <<EOF
+          
+          -- Attempt the installation
           INSTALL PLUGIN group_replication SONAME 'group_replication.so';
           
           CREATE USER IF NOT EXISTS 'grp_repl'@'%' IDENTIFIED BY 'grp_repl_password';
@@ -48,7 +55,7 @@ spec:
           done
           
           # Bootstrap Group Replication on mysql-0
-          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
+          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD <<EOF
           SET GLOBAL group_replication_group_name='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
           SET GLOBAL group_replication_bootstrap_group=ON;
           START GROUP_REPLICATION;
@@ -61,7 +68,7 @@ spec:
           
           # Join other nodes to the group
           for i in 1 2; do
-            mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
+            mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD <<EOF
           SET GLOBAL group_replication_group_name='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
           START GROUP_REPLICATION;
           
@@ -73,10 +80,10 @@ spec:
           
           # Verify group status
           echo "Group Replication Status:"
-          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -proot_password -e "SELECT * FROM performance_schema.replication_group_members;"
+          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT * FROM performance_schema.replication_group_members;"
           
           # Create test database
-          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -proot_password <<EOF
+          mysql -h mysql-0.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD <<EOF
           CREATE DATABASE IF NOT EXISTS testdb;
           USE testdb;
           CREATE TABLE IF NOT EXISTS test_table (

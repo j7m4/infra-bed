@@ -26,7 +26,10 @@ spec:
             fieldRef:
               fieldPath: metadata.name
         - name: MYSQL_ROOT_PASSWORD
-          value: "root_password"
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: root-password
         command:
         - bash
         - "-c"
@@ -62,7 +65,10 @@ spec:
         image: mysql:8.0
         env:
         - name: MYSQL_ROOT_PASSWORD
-          value: "root_password"
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: root-password
         - name: MYSQL_DATABASE
           value: "test"
         - name: MYSQL_USER
@@ -90,7 +96,7 @@ spec:
             - bash
             - "-c"
             - |
-              mysqladmin ping -h localhost --silent || mysqladmin ping -h localhost -u root -proot_password --silent
+              mysqladmin ping -h localhost --silent || mysqladmin ping -h localhost -u root -p$MYSQL_ROOT_PASSWORD --silent
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -104,14 +110,20 @@ spec:
               if mysql -h localhost -u root -e "SELECT 1" >/dev/null 2>&1; then
                 mysql -h localhost -u root -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='mysql'" >/dev/null 2>&1
               else
-                mysql -h localhost -u root -proot_password -e "SELECT 1" >/dev/null 2>&1 && \
-                mysql -h localhost -u root -proot_password -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='mysql'" >/dev/null 2>&1
+                mysql -h localhost -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" >/dev/null 2>&1 && \
+                mysql -h localhost -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='mysql'" >/dev/null 2>&1
               fi
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
       - name: xtrabackup
         image: percona/percona-xtrabackup:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: root-password
         ports:
         - name: xtrabackup
           containerPort: 3307
@@ -122,7 +134,7 @@ spec:
           cd /var/lib/mysql
           
           # Wait for MySQL to be ready
-          until mysqladmin ping -h 127.0.0.1 --password=root_password --silent; do
+          until mysqladmin ping -h 127.0.0.1 --password=$MYSQL_ROOT_PASSWORD --silent; do
             echo "Waiting for MySQL to be ready..."
             sleep 5
           done

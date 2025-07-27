@@ -1,6 +1,29 @@
 #!/bin/bash
 set -e
 
+# Parse command line arguments
+PRELOAD_IMAGES=true
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --no-preload)
+      PRELOAD_IMAGES=false
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [OPTIONS]"
+      echo "Options:"
+      echo "  --no-preload    Skip preloading Docker images into Kind cluster"
+      echo "  -h, --help      Show this help message"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Use '$0 --help' for usage information"
+      exit 1
+      ;;
+  esac
+done
+
 # Load common configuration
 source "$(dirname "$0")/config.env"
 
@@ -34,4 +57,16 @@ kubectl config use-context "$KUBECTL_CONTEXT"
 echo "🔍 Verifying cluster..."
 kubectl cluster-info --context "$KUBECTL_CONTEXT"
 
+# Preload images if not disabled
+if [ "$PRELOAD_IMAGES" = true ]; then
+    echo ""
+    echo "📥 Preloading Docker images into Kind cluster..."
+    echo "(Use --no-preload to skip this step)"
+    ./scripts/preload-images.sh "$CLUSTER_NAME"
+else
+    echo ""
+    echo "⏭️  Skipping image preloading (--no-preload flag used)"
+fi
+
+echo ""
 echo "✅ Setup complete! Run 'tilt up' to start the development environment."

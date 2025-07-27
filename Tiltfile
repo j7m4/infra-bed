@@ -109,6 +109,7 @@ local_resource('fibonacci-spike',
 
 # Deploy MySQL with Group Replication
 k8s_yaml([
+  'k8s/mysql/secret.yaml',
   'k8s/mysql/configmap.yaml',
   'k8s/mysql/services.yaml',
   'k8s/mysql/statefulset.yaml',
@@ -128,13 +129,13 @@ k8s_resource('mysql-primary-monitor',
 
 # MySQL helper commands
 local_resource('mysql-status',
-  cmd='kubectl exec -n db mysql-0 -- mysql -u root -proot_password -e "SELECT * FROM performance_schema.replication_group_members\\G"',
+  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "SELECT * FROM performance_schema.replication_group_members\\G"',
   labels=['mysql-ops'],
   resource_deps=['mysql']
 )
 
 local_resource('mysql-primary',
-  cmd='kubectl exec -n db mysql-0 -- mysql -u root -proot_password -e "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE=\'PRIMARY\'\\G"',
+  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE=\'PRIMARY\'\\G"',
   labels=['mysql-ops'],
   resource_deps=['mysql']
 )
@@ -148,7 +149,8 @@ local_resource('mysql-init-group',
 # Failover testing commands
 local_resource('mysql-kill-primary',
   cmd='''
-    PRIMARY=$(kubectl exec -n db mysql-0 -- mysql -u root -proot_password -Nse "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE='PRIMARY'" | cut -d'.' -f1)
+    MYSQL_PASSWORD=$(./scripts/get-mysql-password.sh)
+    PRIMARY=$(kubectl exec -n db mysql-0 -- mysql -u root -p$MYSQL_PASSWORD -Nse "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE='PRIMARY'" | cut -d'.' -f1)
     echo "Current primary: $PRIMARY"
     echo "Killing primary pod..."
     kubectl delete pod -n db $PRIMARY --grace-period=0 --force
@@ -159,13 +161,13 @@ local_resource('mysql-kill-primary',
 )
 
 local_resource('mysql-test-write',
-  cmd='kubectl exec -n db mysql-0 -- mysql -u root -proot_password -e "USE testdb; INSERT INTO test_table (data) VALUES (\'Test write at $(date)\'); SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
+  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "USE testdb; INSERT INTO test_table (data) VALUES (\'Test write at $(date)\'); SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
   labels=['mysql-failover'],
   resource_deps=['mysql']
 )
 
 local_resource('mysql-test-read',
-  cmd='kubectl exec -n db mysql-1 -- mysql -u root -proot_password -e "USE testdb; SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
+  cmd='kubectl exec -n db mysql-1 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "USE testdb; SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
   labels=['mysql-failover'],
   resource_deps=['mysql']
 )
