@@ -107,13 +107,12 @@ local_resource('fibonacci-spike',
   resource_deps=['go-spikes']
 )
 
-# Deploy MySQL with Group Replication
+# Deploy MySQL with InnoDB Cluster
 k8s_yaml([
   'k8s/mysql/secret.yaml',
-  'k8s/mysql/configmap.yaml',
-  'k8s/mysql/services.yaml',
-  'k8s/mysql/statefulset.yaml',
-  'k8s/mysql/monitor-primary.yaml'
+  'k8s/mysql/innodb-cluster-config.yaml',
+  'k8s/mysql/innodb-cluster-services.yaml',
+  'k8s/mysql/innodb-cluster-statefulset.yaml'
 ])
 
 k8s_resource('mysql',
@@ -122,59 +121,66 @@ k8s_resource('mysql',
   resource_deps=['lgtm']
 )
 
-k8s_resource('mysql-primary-monitor',
+# Deploy MySQL Router (simplified version without InnoDB Cluster)
+k8s_yaml('k8s/mysql/mysql-router-simple.yaml')
+k8s_resource('mysql-router-simple',
+  port_forwards=['6446:6446', '6447:6447'],
   labels=['data'],
   resource_deps=['mysql']
 )
 
 # MySQL helper commands
 local_resource('mysql-status',
-  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "SELECT * FROM performance_schema.replication_group_members\\G"',
+  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "SHOW VARIABLES LIKE \'hostname\'; SHOW STATUS LIKE \'Uptime\';"',
   labels=['mysql-ops'],
   resource_deps=['mysql']
 )
 
-local_resource('mysql-primary',
-  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE=\'PRIMARY\'\\G"',
+local_resource('mysql-show-instances',
+  cmd='for i in 0 1 2; do echo "=== mysql-$i ==="; kubectl exec -n db mysql-$i -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "SELECT @@hostname as instance" 2>/dev/null || echo "Not ready"; done',
   labels=['mysql-ops'],
   resource_deps=['mysql']
 )
 
-local_resource('mysql-init-group',
-  cmd='kubectl apply -f k8s/mysql/init-job.yaml',
-  labels=['mysql-ops'],
-  resource_deps=['mysql']
-)
+# Removed mysql-init-cluster - use mysql-setup-cluster instead
 
-# Failover testing commands
-local_resource('mysql-kill-primary',
+# Basic MySQL testing commands (no automatic failover without cluster)
+local_resource('mysql-restart-instance',
   cmd='''
-    MYSQL_PASSWORD=$(./scripts/get-mysql-password.sh)
-    PRIMARY=$(kubectl exec -n db mysql-0 -- mysql -u root -p$MYSQL_PASSWORD -Nse "SELECT MEMBER_HOST FROM performance_schema.replication_group_members WHERE MEMBER_ROLE='PRIMARY'" | cut -d'.' -f1)
-    echo "Current primary: $PRIMARY"
-    echo "Killing primary pod..."
-    kubectl delete pod -n db $PRIMARY --grace-period=0 --force
-    echo "Primary pod killed. Group Replication will elect new primary."
+    echo "Usage: kubectl delete pod -n db mysql-<N> to restart an instance"
+    echo "Note: Without InnoDB Cluster, there is no automatic failover"
   ''',
-  labels=['mysql-failover'],
+  labels=['mysql-ops'],
   resource_deps=['mysql']
 )
 
-local_resource('mysql-test-write',
-  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "USE testdb; INSERT INTO test_table (data) VALUES (\'Test write at $(date)\'); SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
-  labels=['mysql-failover'],
+local_resource('mysql-test-connection',
+  cmd='''
+    echo "Testing MySQL connections through router..."
+    echo "Primary (RW) - should connect to mysql-0:"
+    kubectl run mysql-test-rw --rm -it --restart=Never --image=mysql:8.0 -n db -- mysql -h mysql-router-simple -P 6446 -u app -papp_password -e "SELECT @@hostname" 2>&1 | grep -E "mysql-[0-9]|ERROR" || echo "Connection test failed"
+    echo ""
+    echo "Read-only - should connect to mysql-1 or mysql-2:"
+    kubectl run mysql-test-ro --rm -it --restart=Never --image=mysql:8.0 -n db -- mysql -h mysql-router-simple -P 6447 -u app -papp_password -e "SELECT @@hostname" 2>&1 | grep -E "mysql-[0-9]|ERROR" || echo "Connection test failed"
+  ''',
+  labels=['mysql-ops'],
+  resource_deps=['mysql', 'mysql-router-simple']
+)
+
+local_resource('mysql-setup-cluster',
+  cmd='echo "To set up InnoDB Cluster, run: ./scripts/setup-innodb-cluster.sh"',
+  labels=['mysql-ops'],
   resource_deps=['mysql']
 )
 
-local_resource('mysql-test-read',
-  cmd='kubectl exec -n db mysql-1 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "USE testdb; SELECT * FROM test_table ORDER BY id DESC LIMIT 5;"',
-  labels=['mysql-failover'],
-  resource_deps=['mysql']
+local_resource('mysql-cluster-ops',
+  cmd='echo "Cluster operations: ./scripts/mysql-cluster-ops.sh [status|replicas|switch_primary|rejoin|test_failover]"',
+  labels=['mysql-ops']
 )
 
 # MySQL connection helper
 local_resource('mysql-connect',
-  cmd='echo "MySQL connection string: mysql -h localhost -P 3306 -u app -papp_password"',
+  cmd='echo "MySQL connection strings:\\nPrimary (read/write): mysql -h localhost -P 6446 -u app -papp_password\\nRead-only: mysql -h localhost -P 6447 -u app -papp_password\\nDirect to instances: mysql -h localhost -P 3306 -u app -papp_password"',
   labels=['mysql-ops']
 )
 

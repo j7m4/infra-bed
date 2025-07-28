@@ -11,6 +11,8 @@ echo "🚀 Preloading images for Kind cluster: $CLUSTER_NAME"
 IMAGES=(
   # MySQL stack
   "mysql:8.0"
+  "mysql/mysql-server:8.0"
+  "mysql/mysql-router:8.0"
   "percona/percona-xtrabackup:8.0"
   "bitnami/kubectl:1.33.3"
   
@@ -18,8 +20,8 @@ IMAGES=(
   "postgres:15"
   "postgres:15-alpine"
   "bitnami/postgresql-repmgr:15"
-  "patroni/patroni:3.2.2-bookworm"
-  "zalando/spilo-15:3.0-p1"
+  # Patroni is included in Spilo image, no standalone image needed
+  "ghcr.io/zalando/spilo-15:3.0-p1"
   "quay.io/coreos/etcd:v3.5.9"
   
   # Observability stack

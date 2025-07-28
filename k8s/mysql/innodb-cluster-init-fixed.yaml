@@ -1,0 +1,160 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-innodb-cluster-init
+  namespace: db
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: mysql-shell-init
+        image: mysql/mysql-server:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: root-password
+        command:
+        - bash
+        - "-c"
+        - |
+          set -e
+          
+          # MySQL Shell is already included in mysql/mysql-server:8.0 image
+          echo "Starting InnoDB Cluster initialization..."
+          
+          # Wait for all MySQL instances to be ready
+          echo "Waiting for MySQL instances to be ready..."
+          for i in 0 1 2; do
+            while ! mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" 2>/dev/null; do
+              echo "Waiting for mysql-$i to be ready..."
+              sleep 10
+            done
+            echo "mysql-$i is ready"
+          done
+          
+          # Create cluster admin user on all instances
+          echo "Creating cluster admin user on all instances..."
+          for i in 0 1 2; do
+            mysql -h mysql-$i.mysql-headless.db.svc.cluster.local -u root -p$MYSQL_ROOT_PASSWORD <<EOF
+          CREATE USER IF NOT EXISTS 'clusteradmin'@'%' IDENTIFIED BY 'ClusterAdmin123!';
+          GRANT ALL PRIVILEGES ON *.* TO 'clusteradmin'@'%' WITH GRANT OPTION;
+          GRANT PERSIST_RO_VARIABLES_ADMIN ON *.* TO 'clusteradmin'@'%';
+          GRANT SYSTEM_VARIABLES_ADMIN ON *.* TO 'clusteradmin'@'%';
+          GRANT CLONE_ADMIN ON *.* TO 'clusteradmin'@'%';
+          GRANT BACKUP_ADMIN ON *.* TO 'clusteradmin'@'%';
+          GRANT GROUP_REPLICATION_STREAM ON *.* TO 'clusteradmin'@'%';
+          FLUSH PRIVILEGES;
+          EOF
+          done
+          
+          # Configure instances using MySQL Shell
+          echo "Configuring instances for InnoDB Cluster..."
+          for i in 0 1 2; do
+            echo "Configuring mysql-$i..."
+            mysqlsh --host=mysql-$i.mysql-headless.db.svc.cluster.local --user=clusteradmin --password=ClusterAdmin123! --js <<'EOF'
+          try {
+            print("Checking instance configuration...");
+            var instanceHost = session.uri.host + ":3306";
+            
+            // Check if instance needs configuration
+            var status = dba.checkInstanceConfiguration(instanceHost);
+            print("Configuration status: " + JSON.stringify(status));
+            
+            if (status.status !== "ok") {
+              print("Configuring instance...");
+              dba.configureInstance(instanceHost, {
+                password: 'ClusterAdmin123!',
+                interactive: false,
+                restart: true
+              });
+              print("Instance configured, waiting for restart...");
+              
+              // Wait for MySQL to restart
+              session.close();
+              os.sleep(30);
+              
+              // Reconnect
+              shell.connect({
+                host: session.uri.host,
+                user: 'clusteradmin',
+                password: 'ClusterAdmin123!'
+              });
+            } else {
+              print("Instance already configured for InnoDB Cluster");
+            }
+          } catch(e) {
+            print("Error: " + e.message);
+            if (e.message.indexOf("already valid") >= 0) {
+              print("Instance already configured");
+            } else {
+              throw e;
+            }
+          }
+          EOF
+          done
+          
+          # Wait for any restarts to complete
+          echo "Waiting for instances to stabilize..."
+          sleep 30
+          
+          # Create the cluster
+          echo "Creating InnoDB Cluster..."
+          mysqlsh --no-password --host=mysql-0.mysql-headless.db.svc.cluster.local --user=clusteradmin --password=ClusterAdmin123! --js <<'EOF'
+          try {
+            print("Checking for existing cluster...");
+            var cluster = dba.getCluster();
+            print("Cluster already exists");
+            print(JSON.stringify(cluster.status(), null, 2));
+          } catch(e) {
+            print("No existing cluster found, creating new cluster...");
+            
+            // Create cluster
+            var cluster = dba.createCluster('mycluster', {
+              exitStateAction: 'OFFLINE_MODE',
+              autoRejoinTries: 3,
+              consistency: 'BEFORE_ON_PRIMARY_FAILOVER',
+              expelTimeout: 5,
+              memberWeight: 50,
+              ipAllowlist: '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+            });
+            print("Cluster created successfully");
+            
+            // Add instances
+            print("\nAdding mysql-1 to cluster...");
+            cluster.addInstance('clusteradmin@mysql-1.mysql-headless.db.svc.cluster.local:3306', {
+              password: 'ClusterAdmin123!',
+              recoveryMethod: 'clone',
+              waitRecovery: 2,
+              memberWeight: 40
+            });
+            print("mysql-1 added successfully");
+            
+            print("\nAdding mysql-2 to cluster...");
+            cluster.addInstance('clusteradmin@mysql-2.mysql-headless.db.svc.cluster.local:3306', {
+              password: 'ClusterAdmin123!',
+              recoveryMethod: 'clone',
+              waitRecovery: 2,
+              memberWeight: 30
+            });
+            print("mysql-2 added successfully");
+            
+            // Setup router account
+            print("\nSetting up MySQL Router account...");
+            cluster.setupRouterAccount('mysqlrouter', {password: 'RouterPass123!'});
+            
+            // Setup additional accounts
+            print("\nCreating application user...");
+            session.sql("CREATE USER IF NOT EXISTS 'app'@'%' IDENTIFIED BY 'app_password'").execute();
+            session.sql("GRANT ALL PRIVILEGES ON *.* TO 'app'@'%'").execute();
+            
+            // Show final status
+            print("\nFinal Cluster Status:");
+            var status = cluster.status();
+            print(JSON.stringify(status, null, 2));
+          }
+          EOF
+          
+          echo "InnoDB Cluster initialization complete!"

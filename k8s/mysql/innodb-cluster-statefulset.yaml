@@ -9,17 +9,27 @@ spec:
       app: mysql
   serviceName: mysql-headless
   replicas: 3
+  podManagementPolicy: Parallel
   template:
     metadata:
       labels:
         app: mysql
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mysql
+              topologyKey: kubernetes.io/hostname
       initContainers:
       - name: init-mysql
         image: mysql:8.0
-        securityContext:
-          runAsUser: 0
-          runAsGroup: 0
         env:
         - name: POD_NAME
           valueFrom:
@@ -38,9 +48,10 @@ spec:
           # Extract ordinal from pod name
           [[ $POD_NAME =~ -([0-9]+)$ ]] || exit 1
           ordinal=${BASH_REMATCH[1]}
+          
+          # Generate server-id
           echo "[mysqld]" > /mnt/conf.d/server-id.cnf
-          echo "server-id=$((100 + $ordinal))" >> /mnt/conf.d/server-id.cnf
-          echo "loose-group_replication_local_address=\"$POD_NAME.mysql-headless.db.svc.cluster.local:33061\"" >> /mnt/conf.d/server-id.cnf
+          echo "server_id=$((100 + $ordinal))" >> /mnt/conf.d/server-id.cnf
           echo "report_host=$POD_NAME.mysql-headless.db.svc.cluster.local" >> /mnt/conf.d/server-id.cnf
           
           # Copy appropriate config
@@ -49,17 +60,11 @@ spec:
           else
             cp /mnt/config-map/replica.cnf /mnt/conf.d/
           fi
-          
-          # The official MySQL image will handle initialization automatically
-          # when MYSQL_ROOT_PASSWORD is set
         volumeMounts:
         - name: conf
           mountPath: /mnt/conf.d
         - name: config-map
           mountPath: /mnt/config-map
-        - name: data
-          mountPath: /var/lib/mysql
-          subPath: mysql
       containers:
       - name: mysql
         image: mysql:8.0
@@ -71,13 +76,13 @@ spec:
               key: root-password
         - name: MYSQL_DATABASE
           value: "test"
-        - name: MYSQL_USER
-          value: "app"
-        - name: MYSQL_PASSWORD
-          value: "app_password"
+        - name: MYSQL_ROOT_HOST
+          value: "%"
         ports:
         - name: mysql
           containerPort: 3306
+        - name: mysql-x
+          containerPort: 33060
         - name: group-repl
           containerPort: 33061
         volumeMounts:
@@ -90,14 +95,17 @@ spec:
           requests:
             cpu: 500m
             memory: 1Gi
+          limits:
+            cpu: 2
+            memory: 2Gi
         livenessProbe:
           exec:
             command:
             - bash
             - "-c"
             - |
-              mysqladmin ping -h localhost --silent || mysqladmin ping -h localhost -u root -p$MYSQL_ROOT_PASSWORD --silent
-          initialDelaySeconds: 30
+              mysqladmin ping -h localhost -u root -p$MYSQL_ROOT_PASSWORD || exit 1
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
         readinessProbe:
@@ -106,58 +114,32 @@ spec:
             - bash
             - "-c"
             - |
-              # Try connecting without password first (for initial setup), then with password
-              if mysql -h localhost -u root -e "SELECT 1" >/dev/null 2>&1; then
-                mysql -h localhost -u root -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='mysql'" >/dev/null 2>&1
-              else
-                mysql -h localhost -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" >/dev/null 2>&1 && \
-                mysql -h localhost -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='mysql'" >/dev/null 2>&1
-              fi
-          initialDelaySeconds: 10
+              mysql -h localhost -u root -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" || exit 1
+          initialDelaySeconds: 45
           periodSeconds: 5
           timeoutSeconds: 3
-      - name: xtrabackup
-        image: percona/percona-xtrabackup:8.0
-        env:
-        - name: MYSQL_ROOT_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: mysql-credentials
-              key: root-password
-        ports:
-        - name: xtrabackup
-          containerPort: 3307
+      - name: mysql-shell
+        image: mysql/mysql-server:8.0
         command:
         - bash
         - "-c"
         - |
-          cd /var/lib/mysql
-          
-          # Wait for MySQL to be ready
-          until mysqladmin ping -h 127.0.0.1 --password=$MYSQL_ROOT_PASSWORD --silent; do
-            echo "Waiting for MySQL to be ready..."
-            sleep 5
-          done
-          
-          # For now, just sleep to keep container running
-          # In production, you'd use this for backup/restore operations
-          while true; do
-            sleep 3600
-          done
+          # MySQL Shell is already included in mysql/mysql-server:8.0 image
+          # Just keep container running for exec access
+          tail -f /dev/null
         volumeMounts:
-        - name: data
-          mountPath: /var/lib/mysql
-          subPath: mysql
+        - name: config-map
+          mountPath: /scripts
         resources:
           requests:
             cpu: 100m
-            memory: 100Mi
+            memory: 256Mi
       volumes:
       - name: conf
         emptyDir: {}
       - name: config-map
         configMap:
-          name: mysql-config
+          name: mysql-innodb-cluster-config
   volumeClaimTemplates:
   - metadata:
       name: data

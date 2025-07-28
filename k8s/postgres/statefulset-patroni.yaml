@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: zalando/spilo-15:3.0-p1
+        image: ghcr.io/zalando/spilo-15:3.0-p1
         imagePullPolicy: IfNotPresent
         env:
         - name: PGVERSION
