@@ -121,12 +121,17 @@ local_resource('mysql-cluster-deploy',
   resource_deps=['mysql-operator-deploy']
 )
 
-# MySQL Cluster resources
-# k8s_resource('my-mysql-cluster',
-#   port_forwards=['3306:3306', '6446:6446', '6447:6447'],
-#   labels=['data'],
-#   resource_deps=['lgtm', 'mysql-cluster-deploy']
-# )
+# MySQL Cluster resources - port forward in background
+local_resource('mysql-port-forward',
+    serve_cmd=['kubectl', 'port-forward', '-n', 'db', 'svc/my-mysql-cluster', '3306:3306', '6446:6446', '6447:6447'],
+    labels=['data'],
+    resource_deps=['mysql-cluster-deploy'],
+    readiness_probe=probe(
+      exec=exec_action(['sh', '-c', 'nc -z localhost 3306']),
+      period_secs=5,
+      failure_threshold=3
+    )
+  )
 
 # MySQL helper commands
 local_resource('mysql-status',
@@ -136,17 +141,10 @@ local_resource('mysql-status',
 )
 
 local_resource('mysql-show-instances',
-  cmd='for i in 0 1 2; do 
-    echo "=== my-mysql-cluster-$i ==="; 
-    kubectl exec -n db -c mysql my-mysql-cluster-$i -- \
-            mysql -u root -pmysql-root-password \
-                  -e "SELECT @@hostname as instance" 2>/dev/null || echo "Not ready"; 
-  done',
+  cmd='./scripts/mysql-show-instances.sh',
   labels=['mysql-ops'],
   resource_deps=['mysql-cluster-deploy']
 )
-
-# Removed mysql-init-cluster - use mysql-setup-cluster instead
 
 # MySQL cluster testing commands
 local_resource('mysql-cluster-status',
@@ -156,40 +154,20 @@ local_resource('mysql-cluster-status',
 )
 
 local_resource('mysql-test-connection',
-  cmd='''
-    echo "Testing MySQL connections through router..."
-    echo "Primary (RW) - port 6446:"
-    kubectl run mysql-test-rw --rm -it --restart=Never --image=mysql:8.0 -n db -- \
-      mysql -h my-mysql-cluster -P 6446 -u app -papp_password \
-            -e "SELECT @@hostname" 2>&1 | grep -E "my-mysql-cluster-[0-9]|ERROR" || echo "Connection test failed"
-    echo ""
-    echo "Read-only - port 6447:"
-    kubectl run mysql-test-ro --rm -it --restart=Never --image=mysql:8.0 -n db -- \
-      mysql -h my-mysql-cluster -P 6447 -u app -papp_password \
-            -e "SELECT @@hostname" 2>&1 | grep -E "my-mysql-cluster-[0-9]|ERROR" || echo "Connection test failed"
-  ''',
+  cmd='./scripts/mysql-test-connection.sh',
   labels=['mysql-ops'],
   resource_deps=['mysql-cluster-deploy']
 )
 
-local_resource('mysql-failover-test',
-  cmd='''
-    echo "Testing MySQL automatic failover..."
-    echo "1. Current cluster status:"
-    kubectl get innodbclusters -n db
-    echo ""
-    echo "2. To test failover, delete the primary pod:"
-    echo "   kubectl delete pod -n db my-mysql-cluster-0"
-    echo ""
-    echo "3. The operator will automatically handle failover"
-  ''',
+local_resource('mysql-kill-primary',
+  cmd='./scripts/mysql-kill-primary.sh',
   labels=['mysql-ops'],
   resource_deps=['mysql-cluster-deploy']
 )
 
 # MySQL connection helper
 local_resource('mysql-connect',
-  cmd='echo "MySQL connection strings:\\nPrimary (read/write): mysql -h localhost -P 6446 -u app -papp_password\\nRead-only: mysql -h localhost -P 6447 -u app -papp_password\\nRoot access: mysql -h localhost -P 3306 -u root -pmysql-root-password"',
+  cmd='./scripts/mysql-connect.sh',
   labels=['mysql-ops']
 )
 
@@ -236,7 +214,7 @@ k8s_resource('postgres',
 
 # PostgreSQL helper commands
 local_resource('postgres-status',
-  cmd='for i in 0 1 2; do echo "=== postgres-$i ==="; kubectl exec -n db postgres-$i -- pg_isready -U postgres && echo "Ready" || echo "Not ready"; done',
+  cmd='./scripts/postgres-status.sh',
   labels=['postgres-ops'],
   resource_deps=['postgres']
 )
