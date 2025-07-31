@@ -1,0 +1,66 @@
+# MySQL InnoDB Cluster Helm values
+credentials:
+  root:
+    password: "mysql-root-password"
+  # Application user
+  user:
+    name: "app"
+    password: "app_password"
+    database: "myapp"
+    grants: "ALL PRIVILEGES ON myapp.*"
+
+# Server instances configuration
+serverInstances: 3
+serverVersion: "8.0.39"
+
+# MySQL server configuration
+serverConfig:
+  mycnf: |
+    [mysqld]
+    max_connections=200
+    innodb_buffer_pool_size=256M
+    
+# Router configuration
+routerInstances: 2
+routerVersion: "8.0.39"
+
+# PVC configuration
+datadirVolumeClaimTemplate:
+  storageClassName: standard
+  accessModes: ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+# Resource limits
+podSpec:
+  containers:
+    - name: mysql
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+
+# TLS configuration - use self-signed certificates
+tls:
+  useSelfSigned: true
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 3306
+
+# Router service configuration
+routerService:
+  type: ClusterIP
+  ports:
+    rw: 6446
+    ro: 6447
+
+# Enable metrics
+metrics:
+  enabled: true
+  image: prom/mysqld-exporter:v0.15.0

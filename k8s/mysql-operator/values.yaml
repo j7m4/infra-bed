@@ -1,0 +1,30 @@
+# MySQL Operator Helm values
+operator:
+  # Deploy the operator in the db namespace
+  namespace: db
+  
+  # Resource limits for the operator
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Image configuration
+image:
+  pullPolicy: IfNotPresent
+
+# Service account configuration
+serviceAccount:
+  create: true
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Monitoring
+metrics:
+  enabled: true
+  port: 8443

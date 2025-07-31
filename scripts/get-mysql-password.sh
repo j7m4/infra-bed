@@ -4,7 +4,8 @@
 # Function to get MySQL root password from Kubernetes secret
 get_mysql_password() {
     local namespace="${1:-db}"
-    kubectl get secret mysql-credentials -n "$namespace" -o jsonpath='{.data.root-password}' 2>/dev/null | base64 -d
+    # For MySQL operator deployment, the secret name is different
+    kubectl get secret my-mysql-cluster-cluster-secret -n "$namespace" -o jsonpath='{.data.rootPassword}' 2>/dev/null | base64 -d
 }
 
 # If script is run directly, print the password
