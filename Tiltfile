@@ -131,7 +131,7 @@ k8s_resource('mysql-router-simple',
 
 # MySQL helper commands
 local_resource('mysql-status',
-  cmd='kubectl exec -n db mysql-0 -- mysql -u root -p$(./scripts/get-mysql-password.sh) -e "SHOW VARIABLES LIKE \'hostname\'; SHOW STATUS LIKE \'Uptime\';"',
+  cmd='./scripts/mysql-status.sh',
   labels=['mysql-ops'],
   resource_deps=['mysql']
 )
