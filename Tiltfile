@@ -130,12 +130,7 @@ local_resource('mysql-cluster-deploy',
 
 # MySQL helper commands
 local_resource('mysql-status',
-  cmd='for i in 0 1 2; do 
-    echo "=== my-mysql-cluster-$i ==="; 
-    kubectl exec -n db -c mysql my-mysql-cluster-$i -- \
-            mysql -u root -pmysql-root-password \
-                  -e "SHOW VARIABLES LIKE \'hostname\'; SHOW STATUS LIKE \'Uptime\';" 2>/dev/null || echo "Not ready";
-  done',
+  cmd='./scripts/mysql-status.sh',
   labels=['mysql-ops'],
   resource_deps=['mysql-cluster-deploy']
 )
