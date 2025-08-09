@@ -3,7 +3,7 @@
 
 set -e
 
-CLUSTER_NAME="${1:-go-infra-spikes}"
+source "$(dirname "$0")/../config.env"
 
 echo "🚀 Preloading images for Kind cluster: $CLUSTER_NAME"
 
