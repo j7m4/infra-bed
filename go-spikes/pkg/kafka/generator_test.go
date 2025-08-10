@@ -6,7 +6,7 @@ import (
 )
 
 func TestGeneratePayloads_SmallSet(t *testing.T) {
-	cfg := &Config{
+	cfg := &PayloadsConfig{
 		EntityCount:    5,
 		IterationCount: 4,
 		AttributeCount: 3,
@@ -66,7 +66,7 @@ func TestGeneratePayloads_SmallSet(t *testing.T) {
 }
 
 func TestGeneratePayloads_VerifyAttributeValues(t *testing.T) {
-	cfg := &Config{
+	cfg := &PayloadsConfig{
 		EntityCount:    2,
 		IterationCount: 2,
 		AttributeCount: 2,
@@ -140,11 +140,11 @@ func TestGeneratePayloads_VerifyAttributeValues(t *testing.T) {
 func TestGeneratePayloads_InvalidConfig(t *testing.T) {
 	testCases := []struct {
 		name string
-		cfg  *Config
+		cfg  *PayloadsConfig
 	}{
 		{
 			name: "zero entity count",
-			cfg: &Config{
+			cfg: &PayloadsConfig{
 				EntityCount:    0,
 				IterationCount: 1,
 				AttributeCount: 1,
@@ -152,7 +152,7 @@ func TestGeneratePayloads_InvalidConfig(t *testing.T) {
 		},
 		{
 			name: "negative iteration count",
-			cfg: &Config{
+			cfg: &PayloadsConfig{
 				EntityCount:    1,
 				IterationCount: -1,
 				AttributeCount: 1,
@@ -160,7 +160,7 @@ func TestGeneratePayloads_InvalidConfig(t *testing.T) {
 		},
 		{
 			name: "zero attribute count",
-			cfg: &Config{
+			cfg: &PayloadsConfig{
 				EntityCount:    1,
 				IterationCount: 1,
 				AttributeCount: 0,
@@ -184,7 +184,7 @@ func TestGeneratePayloads_DefaultConfig(t *testing.T) {
 		t.Fatalf("GeneratePayloads with nil config returned error: %v", err)
 	}
 
-	defaultCfg := DefaultConfig()
+	defaultCfg := DefaultPayloadsConfig()
 	expectedCount := defaultCfg.EntityCount * defaultCfg.IterationCount
 
 	count := 0
@@ -241,7 +241,7 @@ func TestCreatePayload(t *testing.T) {
 }
 
 func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := DefaultPayloadsConfig()
 
 	if cfg.EntityCount != 10_000 {
 		t.Errorf("Expected EntityCount 10000, got %d", cfg.EntityCount)

@@ -2,23 +2,14 @@ package kafka
 
 import "fmt"
 
-// Config determines how the nature of Payload Generator's behavior with:
-// * EntityCount - the number of unique Entities to include
-// * IterationCount - how many iterations of payloads for each Entity
-// * AttributeCount - the number of random attributes to generate for each Payload
-// and the number
-type Config struct {
-	EntityCount    int
-	IterationCount int
-	AttributeCount int
-}
-
-func DefaultConfig() *Config {
-	return &Config{
-		EntityCount:    10_000,
-		IterationCount: 10,
-		AttributeCount: 5,
+func (cfg *PayloadsConfig) GetTotalCount() (int, error) {
+	if cfg == nil {
+		return 0, fmt.Errorf("configuration cannot be nil")
 	}
+	if cfg.EntityCount <= 0 || cfg.IterationCount <= 0 || cfg.AttributeCount <= 0 {
+		return 0, fmt.Errorf("all counts must be greater than zero")
+	}
+	return cfg.EntityCount * cfg.IterationCount, nil
 }
 
 type PayloadSpecs struct {
@@ -47,9 +38,9 @@ func createPayload(specs PayloadSpecs) (*Payload, error) {
 	return payload, nil
 }
 
-func GeneratePayloads(cfg *Config) (<-chan *Payload, error) {
+func GeneratePayloads(cfg *PayloadsConfig) (<-chan *Payload, error) {
 	if cfg == nil {
-		cfg = DefaultConfig()
+		cfg = DefaultPayloadsConfig()
 	}
 	if cfg.EntityCount <= 0 || cfg.IterationCount <= 0 || cfg.AttributeCount <= 0 {
 		return nil, fmt.Errorf("invalid configuration: all counts must be greater than zero")

@@ -14,26 +14,26 @@ var Logger zerolog.Logger
 
 func Init() {
 	zerolog.TimeFieldFormat = time.RFC3339
-	
+
 	logLevel := os.Getenv("LOG_LEVEL")
 	if logLevel == "" {
 		logLevel = "info"
 	}
-	
+
 	level, err := zerolog.ParseLevel(logLevel)
 	if err != nil {
 		level = zerolog.InfoLevel
 	}
-	
+
 	Logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}).
 		Level(level).
 		With().
 		Timestamp().
 		Caller().
 		Logger()
-	
+
 	log.Logger = Logger
-	
+
 	Logger.Info().Str("level", level.String()).Msg("Logger initialized")
 }
 

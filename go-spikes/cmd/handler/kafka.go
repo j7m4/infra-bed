@@ -11,16 +11,21 @@ import (
 	"github.com/go-infra-spikes/go-spikes/pkg/logger"
 )
 
+// TODO: ability to read this from configmap, custom resource, etc
+var kafkaConfig = kafka.DefaultConnectionConfig()
+var payloadsConfig = kafka.DefaultPayloadsConfig()
+
 func KafkaConsume(w http.ResponseWriter, r *http.Request) {
 	var consumer *kafka.Consumer
 	var err error
-	var count int
+	var payloadCount int
+	var entities = make(map[string]*kafka.Payload, payloadsConfig.EntityCount)
 	var start time.Time
 	var duration time.Duration
 	ctx := r.Context()
 	log := logger.Ctx(ctx)
 
-	consumer, err = kafka.NewConsumer(kafka.DefaultKafkaConfig())
+	consumer, err = kafka.NewConsumer(kafkaConfig)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create Kafka consumer")
 		http.Error(w, fmt.Sprintf("Kafka create consumer error: %v", err), http.StatusInternalServerError)
@@ -37,11 +42,11 @@ func KafkaConsume(w http.ResponseWriter, r *http.Request) {
 
 	start = time.Now()
 
-	if err = consumer.Consume(ctx, func(ctx context.Context, payload *kafka.Payload) error {
-		count++
+	if payloadCount, err = consumer.Consume(ctx, func(ctx context.Context, payload *kafka.Payload) error {
 		// timer will stop when last message is read
 		duration = time.Since(start)
-		log.Debug().Str("entity ", payload.EntityID)
+		//log.Debug().Str("entity", payload.EntityID)
+		entities[payload.EntityID] = payload
 		return nil
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to consume Kafka messages")
@@ -50,7 +55,7 @@ func KafkaConsume(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err = json.NewEncoder(w).Encode(Response{
-		Message:  fmt.Sprintf("kafka message count %d", count),
+		Message:  fmt.Sprintf("kafka payload count %d, entity count %d", payloadCount, len(entities)),
 		Duration: duration.String(),
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed write KafkaConsume HTTP response!")
@@ -66,7 +71,7 @@ func KafkaProduce(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := logger.Ctx(ctx)
 
-	if producer, err = kafka.NewProducer(kafka.DefaultKafkaConfig()); err != nil {
+	if producer, err = kafka.NewProducer(kafkaConfig); err != nil {
 		log.Error().Err(err).Msg("Failed to create Kafka producer")
 		http.Error(w, fmt.Sprintf("Kafka create producer error: %v", err), http.StatusInternalServerError)
 		return

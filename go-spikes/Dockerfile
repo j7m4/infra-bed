@@ -17,6 +17,8 @@ RUN apk --no-cache add ca-certificates librdkafka
 
 WORKDIR /root/
 
+ENV LOG_LEVEL=debug
+
 COPY --from=builder /app/go-spikes .
 
 EXPOSE 8080 6060

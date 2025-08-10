@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/go-infra-spikes/go-spikes/pkg/logger"
@@ -12,25 +11,18 @@ import (
 
 type Producer struct {
 	producer     *k.Producer
-	config       *KafkaConfig
+	config       *ConnectionConfig
 	deliveryChan chan k.Event
 }
 
-func NewProducer(cfg *KafkaConfig) (*Producer, error) {
+func NewProducer(cfg *ConnectionConfig) (*Producer, error) {
 	if cfg == nil {
-		cfg = DefaultKafkaConfig()
+		cfg = DefaultConnectionConfig()
 	}
 
-	configMap := k.ConfigMap{
-		"bootstrap.servers": strings.Join(cfg.Brokers, ","),
-		"client.id":         "payload-producer",
-		"acks":              "all",
-		"retries":           10,
-		"linger.ms":         10,
-		"compression.type":  "snappy",
-	}
+	configMap := DefaultProducerConfigMap(cfg)
 
-	producer, err := k.NewProducer(&configMap)
+	producer, err := k.NewProducer(configMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create producer: %w", err)
 	}
