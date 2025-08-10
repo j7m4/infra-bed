@@ -215,7 +215,11 @@ local_resource('mysql-connect',
 
 local_resource('operator-install-kafka',
     cmd="""
-    kubectl create -f https://strimzi.io/install/latest?namespace=streaming
+    kubectl create namespace streaming --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create -f https://strimzi.io/install/latest?namespace=streaming || true
+    echo "Waiting for Kafka operator to be ready..."
+    sleep 10
+    kubectl wait --for=condition=Available deployment/strimzi-cluster-operator -n streaming --timeout=300s || true
     echo "Kafka operator installed successfully."
     """,
     labels=['kafka'],
