@@ -1,4 +1,4 @@
-module github.com/go-infra-spikes/go-spikes
+module github.com/infra-bed/go-spikes
 
 go 1.24
 

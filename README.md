@@ -1,4 +1,4 @@
-# OpenTelemetry Profiling with Grafana Pyroscope
+# Infrastructure Testbed with code spikes
 
 > ⚠️ **PROOF OF CONCEPT** ⚠️
 > 

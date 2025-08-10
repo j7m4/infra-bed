@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/go-infra-spikes/go-spikes/pkg/logger"
+	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
 type Producer struct {

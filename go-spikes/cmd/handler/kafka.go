@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-infra-spikes/go-spikes/pkg/kafka"
-	"github.com/go-infra-spikes/go-spikes/pkg/logger"
+	"github.com/infra-bed/go-spikes/pkg/kafka"
+	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
 // TODO: ability to read this from configmap, custom resource, etc

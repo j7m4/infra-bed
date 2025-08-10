@@ -6,9 +6,9 @@ import (
 	_ "net/http/pprof"
 	"os"
 
-	"github.com/go-infra-spikes/go-spikes/cmd/handler"
 	"github.com/gorilla/mux"
 	otelpyroscope "github.com/grafana/otel-profiling-go"
+	"github.com/infra-bed/go-spikes/cmd/handler"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -17,7 +17,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 
-	"github.com/go-infra-spikes/go-spikes/pkg/logger"
+	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
 func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {

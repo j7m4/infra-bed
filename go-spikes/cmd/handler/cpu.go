@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-infra-spikes/go-spikes/pkg/fibonacci"
-	"github.com/go-infra-spikes/go-spikes/pkg/logger"
 	"github.com/gorilla/mux"
+	"github.com/infra-bed/go-spikes/pkg/fibonacci"
+	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
 func Fibonacci(w http.ResponseWriter, r *http.Request) {

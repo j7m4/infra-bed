@@ -24,7 +24,7 @@ data:
           from_attribute: k8s.pod.name
           action: insert
         - key: k8s.cluster.name
-          value: go-infra-spikes
+          value: infra-bed
           action: insert
           
     exporters:

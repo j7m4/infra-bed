@@ -1,15 +1,13 @@
-# Tiltfile for OpenTelemetry eBPF Profile Integration POC
-
 # Load extensions
 load('ext://namespace', 'namespace_create')
 
 # Check if Kind cluster exists and use tacops-dev as fallback
-cluster_exists = str(local('kind get clusters | grep -q go-infra-spikes && echo "exists" || echo "not found"', quiet=True)).strip()
+cluster_exists = str(local('kind get clusters | grep -q infra-bed && echo "exists" || echo "not found"', quiet=True)).strip()
 if cluster_exists == "not found":
-    print("⚠️  Kind cluster 'go-infra-spikes' not found. Using tacops-dev cluster instead.")
+    print("⚠️  Kind cluster 'infra-bed' not found. Using tacops-dev cluster instead.")
     cluster_name = 'tacops-dev'
 else:
-    cluster_name = 'go-infra-spikes'
+    cluster_name = 'infra-bed'
 
 # Set kubectl context
 local('kubectl config use-context kind-' + cluster_name, quiet=True)
