@@ -60,6 +60,17 @@ The environment includes:
 - **Grafana LGTM**: Stores and visualizes profiles, logs, metrics, and traces
 - **Pyroscope**: Integrated in LGTM for continuous profiling
 
+## Infrastructure and Tests
+
+Included are various infrastructure options against which spikes are run. 
+The management of the infrastructure and the running of tests is mostly 
+handled through tilt. Descriptions of the options are listed below:
+
+* [Spikes](go-spikes/README.md) describes each spike and all maybe be executed through
+  the [Tilt UI](http://localhost:10350).
+* [Mysql](docs/mysql.md) - MySQL database operations
+* [Kafka](docs/kafka.md) - Kafka message broker operations
+
 ## Features
 
 - Continuous profiling with pprof (CPU, heap, goroutines)

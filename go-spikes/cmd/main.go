@@ -2,15 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"strconv"
-	"time"
 
+	"github.com/go-infra-spikes/go-spikes/cmd/handler"
 	"github.com/gorilla/mux"
 	otelpyroscope "github.com/grafana/otel-profiling-go"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
@@ -21,7 +17,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 
-	"github.com/go-infra-spikes/go-spikes/pkg/fibonacci"
+	"github.com/go-infra-spikes/go-spikes/pkg/logger"
 )
 
 func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
@@ -46,20 +42,17 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	return tp, nil
 }
 
-type Response struct {
-	Message    string      `json:"message"`
-	Duration   string      `json:"duration,omitempty"`
-	Result     interface{} `json:"result,omitempty"`
-	Iterations int         `json:"iterations,omitempty"`
-}
-
 func main() {
 	ctx := context.Background()
+
+	// Initialize logger
+	logger.Init()
+	log := logger.Get()
 
 	// Initialize tracing
 	tp, err := initTracer(ctx)
 	if err != nil {
-		log.Printf("Failed to initialize tracer: %v", err)
+		log.Error().Err(err).Msg("Failed to initialize tracer")
 	} else {
 		defer tp.Shutdown(ctx)
 		// Wrap tracer provider for Pyroscope integration
@@ -75,20 +68,24 @@ func main() {
 		pprofPort = "6060"
 	}
 	go func() {
-		log.Printf("Starting pprof server on port %s", pprofPort)
-		log.Println(http.ListenAndServe(":"+pprofPort, nil))
+		log.Info().Str("port", pprofPort).Msg("Starting pprof server")
+		if err := http.ListenAndServe(":"+pprofPort, nil); err != nil {
+			log.Error().Err(err).Msg("pprof server error")
+		}
 	}()
 
 	r := mux.NewRouter()
 	r.Use(otelmux.Middleware("go-spikes"))
 
 	// Health check
-	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.HandleFunc("/health", handler.Health).Methods("GET")
 
 	////////////////////////////////////////////////////////////
 	// SPIKE ENDPOINTS
 
-	r.HandleFunc("/cpu/fibonacci/{n}", fibonacciHandler).Methods("GET")
+	r.HandleFunc("/cpu/fibonacci/{n}", handler.Fibonacci).Methods("GET")
+	r.HandleFunc("/kafka/produce", handler.KafkaProduce).Methods("GET")
+	r.HandleFunc("/kafka/consume", handler.KafkaConsume).Methods("GET")
 
 	////////////////////////////////////////////////////////////
 
@@ -97,29 +94,8 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Starting go-spikes on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(Response{Message: "healthy"})
-}
-
-func fibonacciHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	n, err := strconv.Atoi(vars["n"])
-	if err != nil || n < 1 || n > 45 {
-		http.Error(w, "Invalid number (1-45)", http.StatusBadRequest)
-		return
+	log.Info().Str("port", port).Msg("Starting go-spikes")
+	if err := http.ListenAndServe(":"+port, r); err != nil {
+		log.Fatal().Err(err).Msg("Server failed to start")
 	}
-
-	start := time.Now()
-	result := fibonacci.DoFibonacci(n)
-	duration := time.Since(start)
-
-	json.NewEncoder(w).Encode(Response{
-		Message:  fmt.Sprintf("Fibonacci of %d", n),
-		Duration: duration.String(),
-		Result:   result,
-	})
 }

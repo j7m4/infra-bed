@@ -10,6 +10,7 @@ echo "🚀 Preloading images for Kind cluster: $CLUSTER_NAME"
 # List of images to preload
 IMAGES=(
   # MySQL stack
+  "container-registry.oracle.com/mysql/community-server:8.0.39"
   "mysql:8.0"
   "mysql/mysql-server:8.0"
   "mysql/mysql-router:8.0"
@@ -17,12 +18,12 @@ IMAGES=(
   "bitnami/kubectl:1.33.3"
   
   # PostgreSQL stack
-  "postgres:15"
-  "postgres:15-alpine"
-  "bitnami/postgresql-repmgr:15"
+#  "postgres:15"
+#  "postgres:15-alpine"
+#  "bitnami/postgresql-repmgr:15"
   # Patroni is included in Spilo image, no standalone image needed
-  "ghcr.io/zalando/spilo-15:3.0-p1"
-  "quay.io/coreos/etcd:v3.5.9"
+#  "ghcr.io/zalando/spilo-15:3.0-p1"
+#  "quay.io/coreos/etcd:v3.5.9"
   
   # Observability stack
   "grafana/otel-lgtm:0.11.6"

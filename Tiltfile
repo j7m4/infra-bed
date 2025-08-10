@@ -107,8 +107,22 @@ k8s_resource('go-spikes',
 )
 
 # Spike commands
-local_resource('run-fibonacci-spike',
+local_resource('run-fibonacci',
     cmd='curl http://localhost:8080/cpu/fibonacci/40',
+    labels=['spikes'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('run-produce-kafka',
+    cmd='curl http://localhost:8080/kafka/produce',
+    labels=['spikes'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('run-consume-kafka',
+    cmd='curl http://localhost:8080/kafka/consume',
     labels=['spikes'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False
