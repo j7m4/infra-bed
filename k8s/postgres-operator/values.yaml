@@ -1,0 +1,52 @@
+# CloudNativePG Operator Helm values
+# https://cloudnative-pg.io/
+
+operator:
+  # Deploy the operator in the db namespace
+  namespace: db
+  
+  # Resource limits for the operator
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Image configuration
+image:
+  repository: ghcr.io/cloudnative-pg/cloudnative-pg
+  pullPolicy: IfNotPresent
+  tag: "1.22.0"
+
+# Service account configuration
+serviceAccount:
+  create: true
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Monitoring
+monitoring:
+  enabled: false
+  podMonitorEnabled: false
+
+# Controller configuration
+config:
+  data:
+    INHERITED_ANNOTATIONS: "linkerd.io/inject"
+    INHERITED_LABELS: "environment,team"
+    MONITORING_ENABLED: "true"
+
+# Webhook configuration
+webhook:
+  port: 9443
+  mutating:
+    failurePolicy: Fail
+  validating:
+    failurePolicy: Fail
+
+# Log level
+logLevel: info
