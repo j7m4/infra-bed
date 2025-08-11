@@ -186,8 +186,8 @@ local_resource('cluster-status-mysql',
     auto_init=False
 )
 
-local_resource('test-connection-mysql',
-    cmd='./scripts/test-connection-mysql.sh',
+local_resource('mysql-test-connection',
+    cmd='./scripts/mysql-test-connection.sh',
     labels=['mysql-ops'],
     resource_deps=['install-cluster-mysql'],
     trigger_mode=TRIGGER_MODE_MANUAL,
@@ -206,6 +206,104 @@ local_resource('mysql-kill-primary',
 local_resource('mysql-connect',
     cmd='./scripts/mysql-connect.sh',
     labels=['mysql-ops'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+##################################################
+# POSTGRES
+
+local_resource('deploy-operator-postgres',
+    cmd="""
+    helm repo add cnpg https://cloudnative-pg.github.io/charts
+    helm repo update
+    helm upgrade --install cnpg cnpg/cloudnative-pg \
+      --namespace db --create-namespace --values k8s/postgres-operator/values.yaml
+    echo "CloudNativePG Operator deployed successfully."
+    """,
+    labels=['postgres']
+)
+
+local_resource('install-cluster-postgres',
+    cmd='kubectl apply -f k8s/postgres-operator/postgres-cluster.yaml -f k8s/postgres-operator/pooler.yaml',
+    labels=['postgres'],
+    resource_deps=['deploy-operator-postgres'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('port-forward-pg',
+    serve_cmd=['kubectl', 'port-forward', '-n', 'db', 'svc/postgres-cluster-rw', '5432:5432'],
+    labels=['postgres-ops'],
+    resource_deps=['install-cluster-postgres'],
+    readiness_probe=probe(
+      exec=exec_action(['sh', '-c', 'nc -z localhost 5432']),
+      period_secs=5,
+      failure_threshold=3
+    ),
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('port-forward-pgpooler',
+    serve_cmd=['kubectl', 'port-forward', '-n', 'db', 'svc/postgres-cluster-pooler', '5433:5432'],
+    labels=['postgres-ops'],
+    resource_deps=['install-cluster-postgres'],
+    readiness_probe=probe(
+      exec=exec_action(['sh', '-c', 'nc -z localhost 5433']),
+      period_secs=5,
+      failure_threshold=3
+    ),
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# PostgreSQL helper commands
+local_resource('postgres-status',
+    cmd='./scripts/postgres-status.sh',
+    labels=['postgres-ops'],
+    resource_deps=['install-cluster-postgres'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('show-instances-postgres',
+    cmd='./scripts/postgres-show-instances.sh',
+    labels=['postgres-ops'],
+    resource_deps=['install-cluster-postgres'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# PostgreSQL cluster testing commands
+local_resource('cluster-status-postgres',
+    cmd='kubectl get clusters -n db',
+    labels=['postgres-ops'],
+    resource_deps=['install-cluster-postgres'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('test-connection-postgres',
+    cmd='./scripts/postgres-test-connection.sh',
+    labels=['postgres-ops'],
+    resource_deps=['install-cluster-postgres'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('postgres-kill-primary',
+    cmd='./scripts/postgres-kill-primary.sh',
+    labels=['postgres-ops'],
+    resource_deps=['install-cluster-postgres'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# PostgreSQL connection helper
+local_resource('postgres-connect',
+    cmd='./scripts/postgres-connect.sh',
+    labels=['postgres-ops'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False
 )
