@@ -2,37 +2,26 @@
 
 echo "=== PostgreSQL Connection Helper ==="
 echo ""
-echo "Choose connection method:"
-echo "1. Connect to primary (read-write)"
-echo "2. Connect to read-only replica"
-echo "3. Connect through PgBouncer pooler"
-echo "4. Connect as superuser (postgres)"
-echo ""
-read -p "Enter choice (1-4): " choice
 
-case $choice in
-  1)
-    echo "Connecting to primary (read-write)..."
-    kubectl run postgres-client --rm -it --restart=Never --image=postgres:16 -n db -- \
-      psql postgresql://app:app_password@postgres-cluster-rw:5432/myapp
-    ;;
-  2)
-    echo "Connecting to read-only replica..."
-    kubectl run postgres-client --rm -it --restart=Never --image=postgres:16 -n db -- \
-      psql postgresql://app:app_password@postgres-cluster-ro:5432/myapp
-    ;;
-  3)
-    echo "Connecting through PgBouncer pooler..."
-    kubectl run postgres-client --rm -it --restart=Never --image=postgres:16 -n db -- \
-      psql postgresql://app:app_password@postgres-cluster-pooler-rw:5432/myapp
-    ;;
-  4)
-    echo "Connecting as superuser..."
-    PRIMARY=$(kubectl get pods -n db -l cnpg.io/cluster=postgres-cluster,cnpg.io/instanceRole=primary -o jsonpath='{.items[0].metadata.name}')
-    kubectl exec -it -n db $PRIMARY -c postgres -- psql -U postgres
-    ;;
-  *)
-    echo "Invalid choice"
-    exit 1
-    ;;
-esac
+echo "1. Connecting to primary (read-write)..."
+kubectl run postgres-client-test-rw --rm -i --restart=Never --image=postgres:16 -n db -- \
+  psql postgresql://app:app_password@postgres-cluster-rw:5432/myapp -c "SELECT 1;"
+
+echo "2. Connecting to read-only replica..."
+kubectl run postgres-client-test-ro --rm -i --restart=Never --image=postgres:16 -n db -- \
+  psql postgresql://app:app_password@postgres-cluster-ro:5432/myapp -c "SELECT 1;"
+
+echo "3. Connecting to 'r' read-balanced replica..."
+kubectl run postgres-client-test-r --rm -i --restart=Never --image=postgres:16 -n db -- \
+  psql postgresql://app:app_password@postgres-cluster-r:5432/myapp -c "SELECT 1;"
+
+echo "4. Connecting through PgBouncer pooler..."
+kubectl run postgres-client-test-pooler --rm -i --restart=Never --image=postgres:16 -n db -- \
+  psql postgresql://app:app_password@postgres-cluster-pooler:5432/myapp -c "SELECT 1;"
+
+echo "5. Connecting as superuser..."
+PRIMARY=$(kubectl get pods -n db -l cnpg.io/cluster=postgres-cluster,cnpg.io/instanceRole=primary -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -i -n db $PRIMARY -c postgres -- psql -U postgres -c "SELECT 1;"
+
+echo ""
+echo "All connection methods tested."

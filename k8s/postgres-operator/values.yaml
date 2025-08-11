@@ -14,11 +14,7 @@ operator:
       cpu: 100m
       memory: 128Mi
 
-# Image configuration
-image:
-  repository: ghcr.io/cloudnative-pg/cloudnative-pg
-  pullPolicy: IfNotPresent
-  tag: "1.22.0"
+
 
 # Service account configuration
 serviceAccount:

@@ -58,27 +58,16 @@ spec:
       
   # Monitoring
   monitoring:
-    enabled: false
+    enablePodMonitor: false
     
   # High Availability configuration
   nodeMaintenanceWindow:
     inProgress: false
     reusePVC: true
     
-  # Connection pooling with PgBouncer
-  pooler:
-    enabled: true
-    type: pgbouncer
-    instances: 2
-    pgbouncer:
-      poolMode: session
-      parameters:
-        max_client_conn: "1000"
-        default_pool_size: "25"
+  
         
-  # Service configuration
-  service:
-    type: ClusterIP
+  
     
 ---
 # Secret for application user

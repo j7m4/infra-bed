@@ -186,8 +186,8 @@ local_resource('cluster-status-mysql',
     auto_init=False
 )
 
-local_resource('test-connection-mysql',
-    cmd='./scripts/test-connection-mysql.sh',
+local_resource('mysql-test-connection',
+    cmd='./scripts/mysql-test-connection.sh',
     labels=['mysql-ops'],
     resource_deps=['install-cluster-mysql'],
     trigger_mode=TRIGGER_MODE_MANUAL,
@@ -225,14 +225,14 @@ local_resource('deploy-operator-postgres',
 )
 
 local_resource('install-cluster-postgres',
-    cmd='kubectl apply -f k8s/postgres-operator/postgres-cluster.yaml',
+    cmd='kubectl apply -f k8s/postgres-operator/postgres-cluster.yaml -f k8s/postgres-operator/pooler.yaml',
     labels=['postgres'],
     resource_deps=['deploy-operator-postgres'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False
 )
 
-local_resource('port-forward-postgres',
+local_resource('port-forward-pg',
     serve_cmd=['kubectl', 'port-forward', '-n', 'db', 'svc/postgres-cluster-rw', '5432:5432'],
     labels=['postgres-ops'],
     resource_deps=['install-cluster-postgres'],
@@ -245,8 +245,8 @@ local_resource('port-forward-postgres',
     auto_init=False
 )
 
-local_resource('port-forward-postgres-pooler',
-    serve_cmd=['kubectl', 'port-forward', '-n', 'db', 'svc/postgres-cluster-pooler-rw', '5433:5432'],
+local_resource('port-forward-pgpooler',
+    serve_cmd=['kubectl', 'port-forward', '-n', 'db', 'svc/postgres-cluster-pooler', '5433:5432'],
     labels=['postgres-ops'],
     resource_deps=['install-cluster-postgres'],
     readiness_probe=probe(

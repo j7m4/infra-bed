@@ -21,7 +21,11 @@ for details.
 
 - [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
 - [Tilt](https://docs.tilt.dev/install.html)
-- kubectl
+- kubectl with [krew](https://krew.sigs.k8s.io/) installed and the following plugins:
+  - [ctx](https://krew.sigs.k8s.io/plugins/ctx/)
+  - [ns](https://krew.sigs.k8s.io/plugins/ns/)
+  - [image](https://krew.sigs.k8s.io/plugins/image/)
+- helm
 
 ## Quick Start
 
