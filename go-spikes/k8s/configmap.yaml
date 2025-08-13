@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-spikes-config
+  namespace: default
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
+    
+    kafka:
+      brokers:
+        - kafka-cluster-kafka-bootstrap.streaming:9092
+      topic: test-topic
+      consumerGroup: go-spikes-consumer
+      producer:
+        batchSize: 100
+        batchTimeout: 1s
+        compressionType: snappy
+        maxRetries: 3
+        acks: all
+      consumer:
+        heartbeatInterval: 3s
+        maxPollRecords: 500
+        autoOffsetReset: earliest
+        autoCommitInterval: 5s
+        sessionTimeout: 10s
+        maxPollInterval: 5m
+        autoCommitEnabled: false
+    
+    database:
+      mysql:
+        enabled: true
+        host: mycluster-router.default
+        port: 6446
+        database: test_db
+        user: root
+        maxConnections: 25
+        maxIdleConns: 5
+        connMaxLifetime: 5m
+      postgres:
+        enabled: true
+        host: postgres-cluster-rw.default
+        port: 5432
+        database: myapp
+        user: app
+        sslMode: disable
+        maxConnections: 25
+        maxIdleConns: 5
+        connMaxLifetime: 5m
+    
+    features:
+      enableProfiling: true
+      enableTracing: true
+      enableMetrics: true
+      enableDebugLogging: true
+      experimental:
+        asyncProcessing: false
+        cacheWarmup: false
+        advancedMetrics: true
+    
+    metrics:
+      scrapeInterval: 10s
+      histogramBuckets:
+        - 0.001
+        - 0.01
+        - 0.1
+        - 0.5
+        - 1
+        - 2.5
+        - 5
+        - 10
+      labels:
+        environment: development
+        team: infrastructure
+        version: v1.0.0
+        
+    tests:
+      entityRepo:
+        payloads:
+          entityCount: 10000
+          iterationCount: 10
+          attributeCount: 5
+        kafkaOverrides:
+          brokers:
+          - persistent-cluster-kafka-bootstrap.streaming:9092
+          topic: entity-repo
+          consumerGroup: entity-repo-consumer
+          producer:
+            batchSize: 100
+            batchTimeout: 1s
+            compressionType: snappy
+            maxRetries: 3
+          consumer:
+            autoOffsetReset: earliest
+            autoCommitEnabled: false

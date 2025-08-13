@@ -7,96 +7,42 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/infra-bed/go-spikes/pkg/kafka"
-	"github.com/infra-bed/go-spikes/pkg/logger"
+	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
+	k "github.com/infra-bed/go-spikes/pkg/infra/kafka"
+	"github.com/infra-bed/go-spikes/pkg/infra/kafka/entityrepo"
+	"go.opentelemetry.io/otel"
 )
 
-// TODO: ability to read this from configmap, custom resource, etc
-var kafkaConfig = kafka.DefaultConnectionConfig()
-var payloadsConfig = kafka.DefaultPayloadsConfig()
+func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
+	var plugin *entityrepo.PluginEntityRepo
 
-func KafkaConsume(w http.ResponseWriter, r *http.Request) {
-	var consumer *kafka.Consumer
-	var err error
-	var payloadCount int
-	var entities = make(map[string]*kafka.Payload, payloadsConfig.EntityCount)
-	var start time.Time
-	var duration time.Duration
-	ctx := r.Context()
-	log := logger.Ctx(ctx)
+	testConfig := configManager.GetTests().EntityRepoConfig
 
-	consumer, err = kafka.NewConsumer(kafkaConfig)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create Kafka consumer")
-		http.Error(w, fmt.Sprintf("Kafka create consumer error: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer func(consumer *kafka.Consumer) {
-		err := consumer.Close()
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to close Kafka consumer")
-		} else {
-			log.Debug().Msg("Kafka consumer closed successfully")
+	plugin = entityrepo.NewPluginEntityRepo(testConfig.PayloadsConfig)
+	kConfig := cfg.ApplyKafkaConfigOverrides(configManager.GetKafka(), testConfig.KafkaOverrides)
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		traceCtx, span := otel.Tracer("EntityRepoTest").Start(ctx, "EntityRepoTest")
+		defer span.End()
+		go func() {
+			k.RunProducer(traceCtx, kConfig, plugin)
+		}()
+		go func() {
+			k.RunConsumer(traceCtx, kConfig, plugin)
+		}()
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				time.Sleep(1 * time.Second)
+			}
 		}
-	}(consumer)
+	}()
 
-	start = time.Now()
-
-	if payloadCount, err = consumer.Consume(ctx, func(ctx context.Context, payload *kafka.Payload) error {
-		// timer will stop when last message is read
-		duration = time.Since(start)
-		//log.Debug().Str("entity", payload.EntityID)
-		entities[payload.EntityID] = payload
-		return nil
-	}); err != nil {
-		log.Error().Err(err).Msg("Failed to consume Kafka messages")
-		http.Error(w, fmt.Sprintf("Kafka consume error: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if err = json.NewEncoder(w).Encode(Response{
-		Message:  fmt.Sprintf("kafka payload count %d, entity count %d", payloadCount, len(entities)),
-		Duration: duration.String(),
-	}); err != nil {
-		log.Error().Err(err).Msg("Failed write KafkaConsume HTTP response!")
-	}
-}
-
-func KafkaProduce(w http.ResponseWriter, r *http.Request) {
-	var producer *kafka.Producer
-	var err error
-	var count int
-	var start time.Time
-	var duration time.Duration
-	ctx := r.Context()
-	log := logger.Ctx(ctx)
-
-	if producer, err = kafka.NewProducer(kafkaConfig); err != nil {
-		log.Error().Err(err).Msg("Failed to create Kafka producer")
-		http.Error(w, fmt.Sprintf("Kafka create producer error: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer producer.Close()
-
-	start = time.Now()
-
-	var payloads <-chan *kafka.Payload
-	if payloads, err = kafka.GeneratePayloads(nil); err != nil {
-		log.Error().Err(err).Msg("Failed to generate Kafka payloads")
-		http.Error(w, fmt.Sprintf("Kafka generate payloads error: %v", err), http.StatusInternalServerError)
-		return
-	}
-	if count, err = producer.ProduceBatch(ctx, payloads); err != nil {
-		log.Error().Err(err).Msg("Failed to produce Kafka messages")
-		http.Error(w, fmt.Sprintf("Kafka produce error: %v", err), http.StatusInternalServerError)
-		return
-	}
-	duration = time.Since(start)
-
-	if err = json.NewEncoder(w).Encode(Response{
-		Message:  fmt.Sprintf("kafka message count %d", count),
-		Duration: duration.String(),
-	}); err != nil {
-		log.Error().Err(err).Msg("Failed write KafkaProduce HTTP response!")
-	}
+	json.NewEncoder(w).Encode(Response{
+		Message: fmt.Sprintf("running"),
+	})
 }

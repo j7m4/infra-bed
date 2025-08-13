@@ -11,22 +11,15 @@ import (
 )
 
 var Logger zerolog.Logger
+var Level zerolog.Level = zerolog.InfoLevel
 
 func Init() {
 	zerolog.TimeFieldFormat = time.RFC3339
 
-	logLevel := os.Getenv("LOG_LEVEL")
-	if logLevel == "" {
-		logLevel = "info"
-	}
-
-	level, err := zerolog.ParseLevel(logLevel)
-	if err != nil {
-		level = zerolog.InfoLevel
-	}
+	defaultLevel := zerolog.InfoLevel
 
 	Logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}).
-		Level(level).
+		Level(Level).
 		With().
 		Timestamp().
 		Caller().
@@ -34,7 +27,7 @@ func Init() {
 
 	log.Logger = Logger
 
-	Logger.Info().Str("level", level.String()).Msg("Logger initialized")
+	Logger.Info().Str("level", defaultLevel.String()).Msg("Logger initialized")
 }
 
 func Get() *zerolog.Logger {
@@ -45,16 +38,29 @@ func Get() *zerolog.Logger {
 func WithContext(ctx context.Context) zerolog.Logger {
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
-		return Logger.With().
+		return Logger.Level(Level).With().
 			Str("trace_id", spanCtx.TraceID().String()).
 			Str("span_id", spanCtx.SpanID().String()).
 			Logger()
 	}
-	return Logger
+	return Logger.Level(Level)
 }
 
 // Ctx returns a zerolog context logger with trace information
 func Ctx(ctx context.Context) *zerolog.Logger {
 	l := WithContext(ctx)
 	return &l
+}
+
+func SetDebugLevel() {
+	setLevel(zerolog.DebugLevel)
+}
+
+func SetInfoLevel() {
+	setLevel(zerolog.InfoLevel)
+}
+
+func setLevel(level zerolog.Level) {
+	Level = level
+	zerolog.SetGlobalLevel(level)
 }

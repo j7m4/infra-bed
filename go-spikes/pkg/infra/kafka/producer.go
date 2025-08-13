@@ -2,39 +2,68 @@ package kafka
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
-type Producer struct {
+type Producer[T any] struct {
 	producer     *k.Producer
-	config       *ConnectionConfig
+	config       cfg.KafkaConfig
 	deliveryChan chan k.Event
 }
 
-func NewProducer(cfg *ConnectionConfig) (*Producer, error) {
-	if cfg == nil {
-		cfg = DefaultConnectionConfig()
+func RunProducer[T any](ctx context.Context, cfg cfg.KafkaConfig, plugin Plugin[T]) {
+	var err error
+	var producer *Producer[T]
+	var payloads <-chan T
+	var count int
+	var log = logger.WithContext(ctx)
+
+	if producer, err = NewProducer[T](cfg); err != nil {
+		log.Error().Err(err).Msg("Failed to create Kafka producer")
+		return
 	}
+	defer producer.Close()
+	if payloads, err = plugin.GeneratePayloads(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to generate Kafka payloads")
+		return
+	}
+	if count, err = producer.ProduceBatch(ctx, payloads); err != nil {
+		log.Error().Err(err).Msg("Failed to produce Kafka messages")
+		return
+	}
+	log.Info().Int("count", count).Msg("Finished producing Kafka messages")
+}
 
-	configMap := DefaultProducerConfigMap(cfg)
-
+func NewProducer[T any](cfg cfg.KafkaConfig) (*Producer[T], error) {
+	configMap := &k.ConfigMap{
+		"bootstrap.servers": strings.Join(cfg.Brokers, ","),
+		"client.id":         fmt.Sprintf("%s-producer", cfg.ConsumerGroup),
+		"acks":              cfg.ProducerConfig.Acks,
+		"retries":           10,
+		"linger.ms":         10,
+		"compression.type":  cfg.ProducerConfig.CompressionType,
+	}
+	logger.Get().Info().Any("config", cfg).Msg("created consumer")
 	producer, err := k.NewProducer(configMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create producer: %w", err)
 	}
 
-	return &Producer{
+	return &Producer[T]{
 		producer:     producer,
 		config:       cfg,
 		deliveryChan: make(chan k.Event, 1000),
 	}, nil
 }
 
-func (p *Producer) ProducePayload(ctx context.Context, payload *Payload) error {
+func (p *Producer[T]) ProducePayload(ctx context.Context, payload T) error {
 	log := logger.Ctx(ctx)
 
 	data, err := json.Marshal(payload)
@@ -42,12 +71,13 @@ func (p *Producer) ProducePayload(ctx context.Context, payload *Payload) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
+	key := sha256.New().Sum(data)
 	msg := &k.Message{
 		TopicPartition: k.TopicPartition{
 			Topic:     &p.config.Topic,
 			Partition: k.PartitionAny,
 		},
-		Key:   []byte(payload.EntityID),
+		Key:   key,
 		Value: data,
 	}
 
@@ -63,7 +93,6 @@ func (p *Producer) ProducePayload(ctx context.Context, payload *Payload) error {
 			return fmt.Errorf("delivery failed: %w", m.TopicPartition.Error)
 		}
 		log.Debug().
-			Str("entity_id", payload.EntityID).
 			Int32("partition", m.TopicPartition.Partition).
 			Int64("offset", int64(m.TopicPartition.Offset)).
 			Msg("Message delivered")
@@ -74,25 +103,26 @@ func (p *Producer) ProducePayload(ctx context.Context, payload *Payload) error {
 	return nil
 }
 
-func (p *Producer) ProducePayloadAsync(payload *Payload) error {
+func (p *Producer[T]) ProducePayloadAsync(payload interface{}) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
+	key := sha256.New().Sum(data)
 	msg := &k.Message{
 		TopicPartition: k.TopicPartition{
 			Topic:     &p.config.Topic,
 			Partition: k.PartitionAny,
 		},
-		Key:   []byte(payload.EntityID),
+		Key:   key,
 		Value: data,
 	}
 
 	return p.producer.Produce(msg, nil)
 }
 
-func (p *Producer) ProduceBatch(ctx context.Context, payloadChan <-chan *Payload) (int, error) {
+func (p *Producer[T]) ProduceBatch(ctx context.Context, payloadChan <-chan T) (int, error) {
 	log := logger.Ctx(ctx)
 
 	go p.handleDeliveryReports(ctx)
@@ -104,7 +134,7 @@ func (p *Producer) ProduceBatch(ctx context.Context, payloadChan <-chan *Payload
 			return count, ctx.Err()
 		default:
 			if err := p.ProducePayloadAsync(payload); err != nil {
-				log.Error().Err(err).Str("entity_id", payload.EntityID).Msg("Failed to produce payload")
+				log.Error().Err(err).Msg("Failed to produce payload")
 				continue
 			}
 			count++
@@ -119,7 +149,7 @@ func (p *Producer) ProduceBatch(ctx context.Context, payloadChan <-chan *Payload
 	return count, nil
 }
 
-func (p *Producer) handleDeliveryReports(ctx context.Context) {
+func (p *Producer[T]) handleDeliveryReports(ctx context.Context) {
 	log := logger.Ctx(ctx)
 
 	for {
@@ -145,6 +175,6 @@ func (p *Producer) handleDeliveryReports(ctx context.Context) {
 	}
 }
 
-func (p *Producer) Close() {
+func (p *Producer[T]) Close() {
 	p.producer.Close()
 }

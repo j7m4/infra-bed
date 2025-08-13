@@ -1,12 +1,14 @@
-package kafka
+package entityrepo
 
 import (
 	"fmt"
 	"testing"
+
+	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 )
 
 func TestGeneratePayloads_SmallSet(t *testing.T) {
-	cfg := &PayloadsConfig{
+	cfg := cfg.PayloadsConfig{
 		EntityCount:    5,
 		IterationCount: 4,
 		AttributeCount: 3,
@@ -66,7 +68,7 @@ func TestGeneratePayloads_SmallSet(t *testing.T) {
 }
 
 func TestGeneratePayloads_VerifyAttributeValues(t *testing.T) {
-	cfg := &PayloadsConfig{
+	cfg := cfg.PayloadsConfig{
 		EntityCount:    2,
 		IterationCount: 2,
 		AttributeCount: 2,
@@ -140,11 +142,11 @@ func TestGeneratePayloads_VerifyAttributeValues(t *testing.T) {
 func TestGeneratePayloads_InvalidConfig(t *testing.T) {
 	testCases := []struct {
 		name string
-		cfg  *PayloadsConfig
+		cfg  cfg.PayloadsConfig
 	}{
 		{
 			name: "zero entity count",
-			cfg: &PayloadsConfig{
+			cfg: cfg.PayloadsConfig{
 				EntityCount:    0,
 				IterationCount: 1,
 				AttributeCount: 1,
@@ -152,7 +154,7 @@ func TestGeneratePayloads_InvalidConfig(t *testing.T) {
 		},
 		{
 			name: "negative iteration count",
-			cfg: &PayloadsConfig{
+			cfg: cfg.PayloadsConfig{
 				EntityCount:    1,
 				IterationCount: -1,
 				AttributeCount: 1,
@@ -160,7 +162,7 @@ func TestGeneratePayloads_InvalidConfig(t *testing.T) {
 		},
 		{
 			name: "zero attribute count",
-			cfg: &PayloadsConfig{
+			cfg: cfg.PayloadsConfig{
 				EntityCount:    1,
 				IterationCount: 1,
 				AttributeCount: 0,
@@ -175,32 +177,6 @@ func TestGeneratePayloads_InvalidConfig(t *testing.T) {
 				t.Errorf("Expected error for %s, got nil", tc.name)
 			}
 		})
-	}
-}
-
-func TestGeneratePayloads_DefaultConfig(t *testing.T) {
-	payloadChan, err := GeneratePayloads(nil)
-	if err != nil {
-		t.Fatalf("GeneratePayloads with nil config returned error: %v", err)
-	}
-
-	defaultCfg := DefaultPayloadsConfig()
-	expectedCount := defaultCfg.EntityCount * defaultCfg.IterationCount
-
-	count := 0
-	for payload := range payloadChan {
-		count++
-		if len(payload.Attributes) != defaultCfg.AttributeCount {
-			t.Errorf("Expected %d attributes with default config, got %d",
-				defaultCfg.AttributeCount, len(payload.Attributes))
-		}
-		if count > expectedCount {
-			t.Fatalf("Generated more payloads than expected")
-		}
-	}
-
-	if count != expectedCount {
-		t.Errorf("Expected %d payloads with default config, got %d", expectedCount, count)
 	}
 }
 
@@ -237,19 +213,5 @@ func TestCreatePayload(t *testing.T) {
 		} else if value != expectedValue {
 			t.Errorf("Attribute %s: expected %s, got %v", key, expectedValue, value)
 		}
-	}
-}
-
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultPayloadsConfig()
-
-	if cfg.EntityCount != 10_000 {
-		t.Errorf("Expected EntityCount 10000, got %d", cfg.EntityCount)
-	}
-	if cfg.IterationCount != 10 {
-		t.Errorf("Expected IterationCount 10, got %d", cfg.IterationCount)
-	}
-	if cfg.AttributeCount != 5 {
-		t.Errorf("Expected AttributeCount 5, got %d", cfg.AttributeCount)
 	}
 }

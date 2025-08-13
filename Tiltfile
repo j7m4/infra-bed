@@ -91,13 +91,17 @@ docker_build(
     'go-spikes:dev',
     './go-spikes',
     dockerfile='./go-spikes/Dockerfile',
-    live_update=[
-        sync('./go-spikes/', '/app/'),
-        run('cd /app && go build -o /root/go-spikes ./cmd/main.go', trigger=['**/*.go'])
-    ]
+    only=['cmd', 'pkg', 'go.mod', 'go.sum'],
+    #live_update=[
+    #    sync('./go-spikes/', '/app/'),
+    #    run('cd /app && CGO_ENABLED=1 go build -tags musl -o /root/go-spikes ./cmd/main.go', trigger=['**/*.go'])
+    #]
 )
 
-k8s_yaml('go-spikes/k8s/deployment.yaml')
+k8s_yaml([
+    'go-spikes/k8s/configmap.yaml',
+    'go-spikes/k8s/deployment.yaml'
+])
 k8s_resource('go-spikes',
     port_forwards=['8080:8080', '6060:6060'],
     labels=['spikes'],
@@ -112,15 +116,8 @@ local_resource('run-fibonacci',
     auto_init=False
 )
 
-local_resource('run-produce-kafka',
-    cmd='curl http://localhost:8080/kafka/produce',
-    labels=['spikes'],
-    trigger_mode=TRIGGER_MODE_MANUAL,
-    auto_init=False
-)
-
-local_resource('run-consume-kafka',
-    cmd='curl http://localhost:8080/kafka/consume',
+local_resource('run-entity-repo-kafka',
+    cmd='curl http://localhost:8080/kafka/entity-repo',
     labels=['spikes'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False

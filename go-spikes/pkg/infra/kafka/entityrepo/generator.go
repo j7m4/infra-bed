@@ -1,16 +1,20 @@
-package kafka
+package entityrepo
 
-import "fmt"
+import (
+	"fmt"
 
-func (cfg *PayloadsConfig) GetTotalCount() (int, error) {
-	if cfg == nil {
-		return 0, fmt.Errorf("configuration cannot be nil")
-	}
-	if cfg.EntityCount <= 0 || cfg.IterationCount <= 0 || cfg.AttributeCount <= 0 {
-		return 0, fmt.Errorf("all counts must be greater than zero")
-	}
-	return cfg.EntityCount * cfg.IterationCount, nil
-}
+	k "github.com/infra-bed/go-spikes/pkg/config/kafka"
+)
+
+//func (cfg PayloadsConfig) GetTotalCount() (int, error) {
+//	if cfg == nil {
+//		return 0, fmt.Errorf("configuration cannot be nil")
+//	}
+//	if cfg.EntityCount <= 0 || cfg.IterationCount <= 0 || cfg.AttributeCount <= 0 {
+//		return 0, fmt.Errorf("all counts must be greater than zero")
+//	}
+//	return cfg.EntityCount * cfg.IterationCount, nil
+//}
 
 type PayloadSpecs struct {
 	EntityIdx      int
@@ -38,10 +42,7 @@ func createPayload(specs PayloadSpecs) (*Payload, error) {
 	return payload, nil
 }
 
-func GeneratePayloads(cfg *PayloadsConfig) (<-chan *Payload, error) {
-	if cfg == nil {
-		cfg = DefaultPayloadsConfig()
-	}
+func GeneratePayloads(cfg k.PayloadsConfig) (<-chan *Payload, error) {
 	if cfg.EntityCount <= 0 || cfg.IterationCount <= 0 || cfg.AttributeCount <= 0 {
 		return nil, fmt.Errorf("invalid configuration: all counts must be greater than zero")
 	}
