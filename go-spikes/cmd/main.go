@@ -6,6 +6,9 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/mux"
 	otelpyroscope "github.com/grafana/otel-profiling-go"
@@ -101,6 +104,11 @@ func main() {
 			defer tp.Shutdown(ctx)
 			// Wrap tracer provider for Pyroscope integration
 			otel.SetTracerProvider(otelpyroscope.NewTracerProvider(tp))
+			
+			// Enable OTEL logging when tracing is enabled
+			if err := logger.EnableOTEL(ctx); err != nil {
+				log.Error().Err(err).Msg("Failed to enable OTEL logging")
+			}
 		}
 	}
 
@@ -159,7 +167,33 @@ func main() {
 		Dur("idleTimeout", cfg.Server.IdleTimeout).
 		Msg("Starting go-spikes")
 
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatal().Err(err).Msg("Server failed to start")
+	// Start server in a goroutine
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("Server failed to start")
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info().Msg("Shutting down server...")
+
+	// Create shutdown context with timeout
+	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Shutdown server
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("Server forced to shutdown")
 	}
+
+	// Shutdown OTEL logging
+	if err := logger.ShutdownOTEL(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("Failed to shutdown OTEL logging")
+	}
+
+	log.Info().Msg("Server exited")
 }

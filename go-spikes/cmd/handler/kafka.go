@@ -10,6 +10,7 @@ import (
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 	k "github.com/infra-bed/go-spikes/pkg/infra/kafka"
 	"github.com/infra-bed/go-spikes/pkg/infra/kafka/entityrepo"
+	"github.com/infra-bed/go-spikes/pkg/logger"
 	"go.opentelemetry.io/otel"
 )
 
@@ -24,6 +25,7 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		traceCtx, span := otel.Tracer("EntityRepoTest").Start(ctx, "EntityRepoTest")
+		log := logger.WithContext(traceCtx)
 		defer span.End()
 		go func() {
 			k.RunProducer(traceCtx, kConfig, plugin)
@@ -40,6 +42,7 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(1 * time.Second)
 			}
 		}
+		log.Info().Msg("EntityRepoTest done")
 	}()
 
 	json.NewEncoder(w).Encode(Response{
