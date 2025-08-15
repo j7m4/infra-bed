@@ -1,20 +1,12 @@
 package entityrepo
 
 import (
+	"context"
 	"fmt"
 
 	k "github.com/infra-bed/go-spikes/pkg/config/kafka"
+	"github.com/rs/zerolog/log"
 )
-
-//func (cfg PayloadsConfig) GetTotalCount() (int, error) {
-//	if cfg == nil {
-//		return 0, fmt.Errorf("configuration cannot be nil")
-//	}
-//	if cfg.EntityCount <= 0 || cfg.IterationCount <= 0 || cfg.AttributeCount <= 0 {
-//		return 0, fmt.Errorf("all counts must be greater than zero")
-//	}
-//	return cfg.EntityCount * cfg.IterationCount, nil
-//}
 
 type PayloadSpecs struct {
 	EntityIdx      int
@@ -27,8 +19,8 @@ type Payload struct {
 	Attributes map[string]interface{}
 }
 
-func createPayload(specs PayloadSpecs) (*Payload, error) {
-	payload := &Payload{
+func createPayload(specs PayloadSpecs) (Payload, error) {
+	payload := Payload{
 		EntityID:   fmt.Sprintf("entity-%d", specs.EntityIdx),
 		Attributes: make(map[string]interface{}),
 	}
@@ -42,17 +34,26 @@ func createPayload(specs PayloadSpecs) (*Payload, error) {
 	return payload, nil
 }
 
-func GeneratePayloads(cfg k.PayloadsConfig) (<-chan *Payload, error) {
-	if cfg.EntityCount <= 0 || cfg.IterationCount <= 0 || cfg.AttributeCount <= 0 {
+func GeneratePayloads(ctx context.Context, cfg k.ProducerPluginConfig) (<-chan Payload, error) {
+	if cfg.EntityCount <= 0 || cfg.AttributeCount <= 0 {
 		return nil, fmt.Errorf("invalid configuration: all counts must be greater than zero")
 	}
 
-	payloads := make(chan *Payload)
+	payloads := make(chan Payload)
 
 	go func() {
-		defer close(payloads)
-		for entityIdx := 0; entityIdx < cfg.EntityCount; entityIdx++ {
-			for iterIdx := 0; iterIdx < cfg.IterationCount; iterIdx++ {
+		var iterIdx int
+		var entityIdx int
+		defer func() {
+			close(payloads)
+			log.Info().Msg("Generator closed successfully")
+		}()
+		for {
+			entityIdx++
+			select {
+			case <-ctx.Done():
+				return
+			default:
 				specs := PayloadSpecs{
 					EntityIdx:      entityIdx,
 					IterIdx:        iterIdx,
@@ -68,6 +69,12 @@ func GeneratePayloads(cfg k.PayloadsConfig) (<-chan *Payload, error) {
 				}
 				payloads <- payload
 			}
+			if entityIdx < cfg.EntityCount {
+				entityIdx++
+			} else {
+				entityIdx = 0
+			}
+			iterIdx++
 		}
 	}()
 

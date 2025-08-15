@@ -16,7 +16,7 @@ func TestGeneratePayloads_SmallSet(t *testing.T) {
 
 	payloadChan, err := GeneratePayloads(cfg)
 	if err != nil {
-		t.Fatalf("GeneratePayloads returned error: %v", err)
+		t.Fatalf("Payloads returned error: %v", err)
 	}
 
 	payloads := make([]*Payload, 0)
@@ -76,7 +76,7 @@ func TestGeneratePayloads_VerifyAttributeValues(t *testing.T) {
 
 	payloadChan, err := GeneratePayloads(cfg)
 	if err != nil {
-		t.Fatalf("GeneratePayloads returned error: %v", err)
+		t.Fatalf("Payloads returned error: %v", err)
 	}
 
 	payloads := make([]*Payload, 0)

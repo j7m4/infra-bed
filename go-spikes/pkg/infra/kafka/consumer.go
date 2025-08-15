@@ -8,47 +8,22 @@ import (
 
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
-	"github.com/infra-bed/go-spikes/pkg/infra/kafka/entityrepo"
+	"github.com/infra-bed/go-spikes/pkg/infra"
 	"github.com/infra-bed/go-spikes/pkg/logger"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
-type Consumer[T any] struct {
-	consumer *k.Consumer
-	config   cfg.KafkaConfig
-	plugin   Plugin[T]
+type ConsumerEngine[T any] struct {
+	consumer         *k.Consumer
+	connectionConfig cfg.KafkaConfig
+	plugin           ConsumerPlugin[T]
+	tracer           trace.Tracer
 }
 
-type PayloadHandler func(ctx context.Context, payload *entityrepo.Payload) error
-
-func RunConsumer[T any](ctx context.Context, cfg cfg.KafkaConfig, plugin Plugin[T]) {
-	var consumer *Consumer[T]
-	var err error
-	var count int
-
-	if consumer, err = NewConsumer[T](cfg, plugin); err != nil {
-		log.Error().Err(err).Msg("Failed to create Kafka consumer")
-		return
-	}
-	defer func(consumer *Consumer[T]) {
-		err := consumer.Close()
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to close Kafka consumer")
-		} else {
-			log.Info().Msg("Kafka consumer closed successfully")
-		}
-	}(consumer)
-
-	if count, err = consumer.Consume(ctx); err != nil {
-		log.Error().Err(err).Msg("Failed to consume Kafka messages")
-		return
-	}
-
-	log.Info().Int("count", count).Msg("Finished consuming Kafka messages")
-}
-
-func NewConsumer[T any](cfg cfg.KafkaConfig, plugin Plugin[T]) (*Consumer[T], error) {
-	consumer, err := k.NewConsumer(&k.ConfigMap{
+func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (*ConsumerEngine[T], error) {
+	kafkaConfig := &k.ConfigMap{
 		"bootstrap.servers":       strings.Join(cfg.Brokers, ","),
 		"group.id":                cfg.ConsumerGroup,
 		"client.id":               fmt.Sprintf("%s-consumer", cfg.ConsumerGroup),
@@ -57,56 +32,85 @@ func NewConsumer[T any](cfg cfg.KafkaConfig, plugin Plugin[T]) (*Consumer[T], er
 		"auto.commit.interval.ms": int(cfg.ConsumerConfig.AutoCommitInterval.Milliseconds()),
 		"session.timeout.ms":      int(cfg.ConsumerConfig.SessionTimeout.Milliseconds()),
 		"max.poll.interval.ms":    int(cfg.ConsumerConfig.MaxPollInterval.Milliseconds()),
-	})
+	}
+	consumer, err := k.NewConsumer(kafkaConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
-	logger.Get().Info().Any("config", cfg).Msg("created consumer")
 
-	return &Consumer[T]{
-		consumer: consumer,
-		config:   cfg,
-		plugin:   plugin,
+	return &ConsumerEngine[T]{
+		consumer:         consumer,
+		connectionConfig: cfg,
+		plugin:           plugin,
+		tracer:           otel.Tracer("KafkaConsumer"),
 	}, nil
 }
 
-func (c *Consumer[T]) Subscribe() error {
-	err := c.consumer.SubscribeTopics([]string{c.config.Topic}, nil)
+func (c *ConsumerEngine[T]) Close() {
+	if err := c.consumer.Close(); err != nil {
+		log.Error().Err(err).Msg("Failed to close consumer")
+	} else {
+		log.Info().Msg("Consumer closed successfully")
+	}
+}
+
+func (c *ConsumerEngine[T]) Run(ctx context.Context) {
+	var err error
+
+	if err = c.Consume(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to consume Kafka messages")
+		return
+	}
+}
+
+func (c *ConsumerEngine[T]) Subscribe() error {
+	err := c.consumer.SubscribeTopics([]string{c.connectionConfig.Topic}, nil)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to topic %s: %w", c.config.Topic, err)
+		return fmt.Errorf("failed to subscribe to topic %s: %w", c.connectionConfig.Topic, err)
 	}
 	return nil
 }
 
-func (c *Consumer[T]) Consume(ctx context.Context) (int, error) {
+func (c *ConsumerEngine[T]) Consume(ctx context.Context) error {
+
 	log := logger.Ctx(ctx)
-	//log := logger.Get()
 	log.Info().
-		Str("topic", c.config.Topic).
-		Str("group", c.config.ConsumerGroup).
+		Str("topic", c.connectionConfig.Topic).
+		Str("group", c.connectionConfig.ConsumerGroup).
 		Msg("Starting consumer")
 
 	count := 0
+	batchSize := 10000
+	batchConsumeMsg := fmt.Sprintf("kafka.consume.batch: %d", batchSize)
 	settings := DefaultConsumeTestSettings()
-	testTimeout := time.After(settings.TestTimeout)
+	runTimer := infra.StartRunTimer(ctx, c.plugin)
+	intervalTicker := infra.StartIntervalTicker(ctx, c.plugin)
 
 	if err := c.Subscribe(); err != nil {
-		return count, err
+		return err
 	}
 
+	batchCtx, batchSpan := c.tracer.Start(ctx, batchConsumeMsg)
+	log = logger.Ctx(batchCtx)
+	defer batchSpan.End()
+
 	for {
+		select {
+		case <-intervalTicker.C:
+			log.Trace().Msg("Consumer tick")
+		}
 		select {
 		case <-ctx.Done():
 			log.Info().
 				Int("consume_count", count).
 				Msg("consume context done")
-			return count, ctx.Err()
-		case <-testTimeout:
+			return ctx.Err()
+		case <-runTimer:
 			log.Info().
 				Int("consume_count", count).
-				Dur("testTimeout", settings.TestTimeout).
-				Msg("consume testTimeout reached")
-			return count, nil
+				Dur("runTimer", settings.TestTimeout).
+				Msg("consume runTimer reached")
+			return nil
 		default:
 			msg, err := c.consumer.ReadMessage(100 * time.Millisecond)
 			if err != nil {
@@ -121,7 +125,7 @@ func (c *Consumer[T]) Consume(ctx context.Context) (int, error) {
 					Msg("Received nil message, skipping")
 				continue
 			}
-			if err := c.plugin.ConsumeHandler(ctx, msg.Value); err != nil {
+			if err := c.plugin.ConsumeHandler(batchCtx, msg.Value); err != nil {
 				log.Error().
 					Err(err).
 					Str("key", string(msg.Key)).
@@ -131,21 +135,21 @@ func (c *Consumer[T]) Consume(ctx context.Context) (int, error) {
 				continue
 			}
 			count++
-			if count%1000 == 0 {
+			if count%batchSize == 0 {
+				// close out old and create new span
+				batchSpan.End()
+				batchCtx, batchSpan = c.tracer.Start(ctx, batchConsumeMsg)
+				log = logger.Ctx(batchCtx)
 				log.Info().
 					Int("count", count).
 					Int32("partition", msg.TopicPartition.Partition).
 					Int64("offset", int64(msg.TopicPartition.Offset)).
-					Msg("Consumed messages")
+					Msg(batchConsumeMsg)
 			}
 		}
 	}
 }
 
-func (c *Consumer[T]) GetMetadata() (*k.Metadata, error) {
-	return c.consumer.GetMetadata(&c.config.Topic, false, 5000)
-}
-
-func (c *Consumer[T]) Close() error {
-	return c.consumer.Close()
+func (c *ConsumerEngine[T]) GetMetadata() (*k.Metadata, error) {
+	return c.consumer.GetMetadata(&c.connectionConfig.Topic, false, 5000)
 }

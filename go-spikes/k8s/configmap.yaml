@@ -80,10 +80,15 @@ data:
         
     tests:
       entityRepo:
-        payloads:
-          entityCount: 10000
-          iterationCount: 10
-          attributeCount: 5
+        plugins:
+          consumer:
+            runDuration: 2m
+            intervalDuration: 1ns
+          producer:
+            entityCount: 10000
+            attributeCount: 5
+            runDuration: 2m
+            intervalDuration: 1s
         kafkaOverrides:
           brokers:
           - persistent-cluster-kafka-bootstrap.streaming:9092
