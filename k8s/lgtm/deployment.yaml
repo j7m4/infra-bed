@@ -38,8 +38,10 @@ spec:
           name: grafana
         - containerPort: 3100  # Loki
           name: loki
-        - containerPort: 9090  # Mimir/Prometheus
+        - containerPort: 9090  # Prometheus API
           name: prometheus
+        - containerPort: 9009  # Mimir remote write
+          name: mimir
         - containerPort: 3200  # Tempo
           name: tempo-http
         - containerPort: 4317  # OTLP gRPC
@@ -79,6 +81,9 @@ spec:
   - name: prometheus
     port: 9090
     targetPort: 9090
+  - name: mimir
+    port: 9009
+    targetPort: 9009
   - name: tempo-http
     port: 3200
     targetPort: 3200

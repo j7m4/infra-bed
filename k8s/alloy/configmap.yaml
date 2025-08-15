@@ -79,3 +79,66 @@ data:
       }
     }
     
+    // Prometheus scraping for Kafka, MySQL, and PostgreSQL exporters
+    prometheus.scrape "kafka_exporter" {
+      targets = [
+        {
+          __address__ = "kafka-exporter.streaming:9308",
+          __scheme__  = "http",
+          service_name = "kafka",
+          job = "kafka-exporter",
+        },
+      ]
+      forward_to = [otelcol.receiver.prometheus.default.receiver]
+      scrape_interval = "30s"
+    }
+    
+    prometheus.scrape "mysql_exporter" {
+      targets = [
+        {
+          __address__ = "mysql-exporter.db:9104",
+          __scheme__  = "http",
+          service_name = "mysql",
+          job = "mysql-exporter",
+        },
+      ]
+      forward_to = [otelcol.receiver.prometheus.default.receiver]
+      scrape_interval = "30s"
+    }
+    
+    prometheus.scrape "postgres_exporter" {
+      targets = [
+        {
+          __address__ = "postgres-exporter.db:9187",
+          __scheme__  = "http",
+          service_name = "postgres",
+          job = "postgres-exporter",
+        },
+      ]
+      forward_to = [otelcol.receiver.prometheus.default.receiver]
+      scrape_interval = "30s"
+    }
+    
+    // Convert Prometheus metrics to OTLP
+    otelcol.receiver.prometheus "default" {
+      output {
+        metrics = [otelcol.processor.batch.metrics.input]
+      }
+    }
+    
+    otelcol.processor.batch "metrics" {
+      output {
+        metrics = [otelcol.exporter.otlp.lgtm_metrics.input]
+      }
+    }
+    
+    // Send metrics to LGTM via OTLP
+    otelcol.exporter.otlp "lgtm_metrics" {
+      client {
+        endpoint = "lgtm:4317"
+        tls {
+          insecure = true
+        }
+      }
+    }
+    

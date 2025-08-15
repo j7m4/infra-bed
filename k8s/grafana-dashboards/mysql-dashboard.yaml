@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  mysql-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "MySQL Database Metrics",
+        "uid": "mysql-metrics",
+        "tags": ["mysql", "database"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "title": "MySQL Up",
+            "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "mysql_up",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Current Connections",
+            "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "mysql_global_status_threads_connected",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Questions Rate",
+            "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(mysql_global_status_questions[5m])",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Uptime",
+            "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "mysql_global_status_uptime",
+                "refId": "A"
+              }
+            ],
+            "unit": "s"
+          },
+          {
+            "title": "Queries Per Second",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(mysql_global_status_queries[5m])",
+                "legendFormat": "QPS",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Connection Usage",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "mysql_global_status_threads_connected",
+                "legendFormat": "Connected",
+                "refId": "A"
+              },
+              {
+                "expr": "mysql_global_variables_max_connections",
+                "legendFormat": "Max Connections",
+                "refId": "B"
+              }
+            ]
+          },
+          {
+            "title": "InnoDB Buffer Pool",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "mysql_global_status_innodb_buffer_pool_pages_data * mysql_global_variables_innodb_page_size",
+                "legendFormat": "Data",
+                "refId": "A"
+              },
+              {
+                "expr": "mysql_global_status_innodb_buffer_pool_pages_free * mysql_global_variables_innodb_page_size",
+                "legendFormat": "Free",
+                "refId": "B"
+              }
+            ],
+            "unit": "bytes"
+          },
+          {
+            "title": "Slow Queries",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(mysql_global_status_slow_queries[5m])",
+                "legendFormat": "Slow Queries/sec",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Table Locks",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(mysql_global_status_table_locks_immediate[5m])",
+                "legendFormat": "Immediate",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(mysql_global_status_table_locks_waited[5m])",
+                "legendFormat": "Waited",
+                "refId": "B"
+              }
+            ]
+          },
+          {
+            "title": "Replication Lag",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "mysql_slave_lag_seconds",
+                "legendFormat": "{{instance}}",
+                "refId": "A"
+              }
+            ],
+            "unit": "s"
+          }
+        ],
+        "schemaVersion": 37,
+        "version": 1
+      }
+    }

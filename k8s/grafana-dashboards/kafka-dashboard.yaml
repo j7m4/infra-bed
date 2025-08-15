@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  kafka-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Kafka Cluster Metrics",
+        "uid": "kafka-metrics",
+        "tags": ["kafka", "streaming"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "title": "Kafka Brokers Up",
+            "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "kafka_brokers",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Total Topics",
+            "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "count(kafka_topic_partitions)",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Consumer Groups",
+            "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "count(count by (consumergroup) (kafka_consumergroup_members))",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Messages In Rate",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(kafka_topic_partition_current_offset[5m]))",
+                "legendFormat": "Messages/sec",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Consumer Lag",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum by (consumergroup, topic) (kafka_consumergroup_lag)",
+                "legendFormat": "{{consumergroup}} - {{topic}}",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Partition Distribution",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "kafka_topic_partitions",
+                "legendFormat": "{{topic}}",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "ISR Shrink/Expand Rate",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(kafka_topic_partition_in_sync_replica[5m]))",
+                "legendFormat": "ISR Changes",
+                "refId": "A"
+              }
+            ]
+          }
+        ],
+        "schemaVersion": 37,
+        "version": 1
+      }
+    }

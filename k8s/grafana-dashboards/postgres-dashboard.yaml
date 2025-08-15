@@ -1,0 +1,179 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  postgres-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "PostgreSQL Database Metrics",
+        "uid": "postgres-metrics",
+        "tags": ["postgres", "database"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "title": "PostgreSQL Up",
+            "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "pg_up",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Active Connections",
+            "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(pg_stat_activity_count)",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Database Size",
+            "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(pg_database_size_bytes)",
+                "refId": "A"
+              }
+            ],
+            "unit": "bytes"
+          },
+          {
+            "title": "Transactions Rate",
+            "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(rate(pg_stat_database_xact_commit[5m])) + sum(rate(pg_stat_database_xact_rollback[5m]))",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Database Connections",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "pg_stat_activity_count",
+                "legendFormat": "{{datname}} - {{state}}",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Transaction Rate",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(pg_stat_database_xact_commit[5m])",
+                "legendFormat": "Commits - {{datname}}",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(pg_stat_database_xact_rollback[5m])",
+                "legendFormat": "Rollbacks - {{datname}}",
+                "refId": "B"
+              }
+            ]
+          },
+          {
+            "title": "Cache Hit Ratio",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "pg_stat_database_blks_hit / (pg_stat_database_blks_hit + pg_stat_database_blks_read) * 100",
+                "legendFormat": "{{datname}}",
+                "refId": "A"
+              }
+            ],
+            "unit": "percent"
+          },
+          {
+            "title": "Rows Fetched vs Returned",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(pg_stat_database_tup_fetched[5m])",
+                "legendFormat": "Fetched - {{datname}}",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(pg_stat_database_tup_returned[5m])",
+                "legendFormat": "Returned - {{datname}}",
+                "refId": "B"
+              }
+            ]
+          },
+          {
+            "title": "Deadlocks",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(pg_stat_database_deadlocks[5m])",
+                "legendFormat": "{{datname}}",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Replication Lag",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "pg_replication_lag",
+                "legendFormat": "{{application_name}}",
+                "refId": "A"
+              }
+            ],
+            "unit": "s"
+          },
+          {
+            "title": "Locks by Type",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "pg_locks_count",
+                "legendFormat": "{{datname}} - {{mode}}",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "Checkpoint Activity",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(pg_stat_bgwriter_checkpoints_timed[5m])",
+                "legendFormat": "Scheduled",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(pg_stat_bgwriter_checkpoints_req[5m])",
+                "legendFormat": "Requested",
+                "refId": "B"
+              }
+            ]
+          }
+        ],
+        "schemaVersion": 37,
+        "version": 1
+      }
+    }

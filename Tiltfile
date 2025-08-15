@@ -52,6 +52,59 @@ local_resource(
     labels=['helpers']
 )
 
+##################################################
+# METRICS EXPORTERS
+
+# Deploy Kafka exporter
+local_resource('deploy-kafka-exporter',
+    cmd='kubectl apply -f k8s/exporters/kafka-exporter.yaml',
+    labels=['exporters'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# Deploy MySQL exporter
+local_resource('deploy-mysql-exporter',
+    cmd='kubectl apply -f k8s/exporters/mysql-exporter.yaml',
+    labels=['exporters'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# Deploy PostgreSQL exporter
+local_resource('deploy-postgres-exporter',
+    cmd='kubectl apply -f k8s/exporters/postgres-exporter.yaml',
+    labels=['exporters'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# Deploy all exporters at once
+local_resource('deploy-all-exporters',
+    cmd='''
+    kubectl apply -f k8s/exporters/kafka-exporter.yaml
+    kubectl apply -f k8s/exporters/mysql-exporter.yaml
+    kubectl apply -f k8s/exporters/postgres-exporter.yaml
+    echo "All exporters deployed successfully"
+    ''',
+    labels=['exporters'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# Deploy Grafana dashboards
+local_resource('deploy-grafana-dashboards',
+    cmd='''
+    kubectl apply -f k8s/grafana-dashboards/kafka-dashboard.yaml
+    kubectl apply -f k8s/grafana-dashboards/mysql-dashboard.yaml
+    kubectl apply -f k8s/grafana-dashboards/postgres-dashboard.yaml
+    echo "Grafana dashboards deployed successfully"
+    ''',
+    labels=['exporters'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
 
 # Print cluster info
 print("""
