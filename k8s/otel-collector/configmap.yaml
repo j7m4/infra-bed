@@ -28,12 +28,14 @@ data:
           action: insert
           
     exporters:
+      # CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR tempo
       otlp/tempo:
         endpoint: lgtm:4317
         tls:
           insecure: true
         headers:
           x-scope-orgid: "1"
+      # CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR tempo
           
       debug:
         verbosity: detailed

@@ -94,6 +94,7 @@ func main() {
 		logger.SetDebugLevel()
 	}
 
+	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR go-spikes
 	// Initialize tracing if enabled
 	var tp *sdktrace.TracerProvider
 	if cfg.Features.EnableTracing {
@@ -102,16 +103,22 @@ func main() {
 			log.Error().Err(err).Msg("Failed to initialize tracer")
 		} else {
 			defer tp.Shutdown(ctx)
+			// CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
 			// Wrap tracer provider for Pyroscope integration
 			otel.SetTracerProvider(otelpyroscope.NewTracerProvider(tp))
-			
+			// CROSS-CUTTING END OF pyroscope CONFIGURATION FOR go-spikes
+
+			// CROSS-CUTTING START OF otel-logging CONFIGURATION FOR go-spikes
 			// Enable OTEL logging when tracing is enabled
 			if err := logger.EnableOTEL(ctx); err != nil {
 				log.Error().Err(err).Msg("Failed to enable OTEL logging")
 			}
+			// CROSS-CUTTING END OF otel-logging CONFIGURATION FOR go-spikes
 		}
 	}
+	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR go-spikes
 
+	// CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
 	// Note: We're using Alloy to scrape pprof endpoints instead of pushing directly
 	// This allows for better integration with the Grafana stack
 
@@ -128,6 +135,7 @@ func main() {
 			}
 		}()
 	}
+	// CROSS-CUTTING END OF pyroscope CONFIGURATION FOR go-spikes
 
 	r := mux.NewRouter()
 	r.Use(otelmux.Middleware("go-spikes"))

@@ -41,7 +41,7 @@ data:
       }
     }
 
-    // Scraping with pyroscope
+    // CROSS-CUTTING START OF alloy CONFIGURATION FOR go-spikes
     pyroscope.scrape "pprof" {
       targets = [
         {
@@ -78,7 +78,9 @@ data:
         url = "http://pyroscope:4040"
       }
     }
+    // CROSS-CUTTING END OF alloy CONFIGURATION FOR go-spikes
     
+    // CROSS-CUTTING START OF alloy CONFIGURATION FOR kafka
     // Prometheus scraping for Kafka, MySQL, and PostgreSQL exporters
     prometheus.scrape "kafka_exporter" {
       targets = [
@@ -92,7 +94,9 @@ data:
       forward_to = [otelcol.receiver.prometheus.default.receiver]
       scrape_interval = "30s"
     }
+    // CROSS-CUTTING END OF alloy CONFIGURATION FOR kafka
     
+    // CROSS-CUTTING START OF alloy CONFIGURATION FOR mysql
     prometheus.scrape "mysql_exporter" {
       targets = [
         {
@@ -105,7 +109,9 @@ data:
       forward_to = [otelcol.receiver.prometheus.default.receiver]
       scrape_interval = "30s"
     }
+    // CROSS-CUTTING END OF alloy CONFIGURATION FOR mysql
     
+    // CROSS-CUTTING START OF alloy CONFIGURATION FOR postgres
     prometheus.scrape "postgres_exporter" {
       targets = [
         {
@@ -118,7 +124,9 @@ data:
       forward_to = [otelcol.receiver.prometheus.default.receiver]
       scrape_interval = "30s"
     }
+    // CROSS-CUTTING END OF alloy CONFIGURATION FOR postgres
     
+    // CROSS-CUTTING START OF otel-metrics CONFIGURATION FOR mimir
     // Convert Prometheus metrics to OTLP
     otelcol.receiver.prometheus "default" {
       output {
@@ -141,4 +149,5 @@ data:
         }
       }
     }
+    // CROSS-CUTTING END OF otel-metrics CONFIGURATION FOR mimir
     

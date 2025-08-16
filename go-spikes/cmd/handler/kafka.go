@@ -8,7 +8,7 @@ import (
 	"time"
 
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
-	k "github.com/infra-bed/go-spikes/pkg/infra/kafka"
+	infra "github.com/infra-bed/go-spikes/pkg/infra/kafka"
 	"github.com/infra-bed/go-spikes/pkg/infra/kafka/entityrepo"
 	"github.com/infra-bed/go-spikes/pkg/logger"
 	"go.opentelemetry.io/otel"
@@ -18,9 +18,9 @@ import (
 func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var producerPlugin *entityrepo.ProducerPlugin
-	var producerEngine *k.ProducerEngine[entityrepo.Payload]
+	var producerEngine infra.ProducerEngine[entityrepo.Payload]
 	var consumerPlugin *entityrepo.ConsumerPlugin
-	var consumerEngine *k.ConsumerEngine[entityrepo.Payload]
+	var consumerEngine infra.ConsumerEngine[entityrepo.Payload]
 
 	testConfig := configManager.GetTests().EntityRepoConfig
 
@@ -29,7 +29,7 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 	producerPlugin = entityrepo.NewProducerPlugin(
 		testConfig.PluginsConfig.ProducerPluginConfig,
 	)
-	if producerEngine, err = k.NewProducerEngine[entityrepo.Payload](kConfig, producerPlugin); err != nil {
+	if producerEngine, err = infra.NewProducerEngine[entityrepo.Payload](kConfig, producerPlugin); err != nil {
 		logger.Get().Error().Err(err).Msg("Failed to create producer engine")
 		http.Error(w, "Failed to create producer engine", http.StatusInternalServerError)
 		return
@@ -38,7 +38,7 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 	consumerPlugin = entityrepo.NewConsumerPlugin(
 		testConfig.PluginsConfig.ConsumerPluginConfig,
 	)
-	if consumerEngine, err = k.NewConsumerEngine[entityrepo.Payload](kConfig, consumerPlugin); err != nil {
+	if consumerEngine, err = infra.NewConsumerEngine[entityrepo.Payload](kConfig, consumerPlugin); err != nil {
 		logger.Get().Error().Err(err).Msg("Failed to create consumer engine")
 		http.Error(w, "Failed to create consumer engine", http.StatusInternalServerError)
 		return

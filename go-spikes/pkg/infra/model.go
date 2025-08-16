@@ -11,8 +11,13 @@ type Engine interface {
 }
 
 type Plugin interface {
+	GetInitialDelayDuration() time.Duration
 	GetRunDuration() time.Duration
 	GetIntervalDuration() time.Duration
+}
+
+func StartInitialDelayTimer(ctx context.Context, plugin Plugin) <-chan time.Time {
+	return time.After(plugin.GetInitialDelayDuration())
 }
 
 func StartRunTimer(ctx context.Context, plugin Plugin) <-chan time.Time {

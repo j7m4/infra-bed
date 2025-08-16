@@ -5,7 +5,6 @@ import "time"
 type KafkaConfig struct {
 	Brokers        []string       `mapstructure:"brokers"`
 	Topic          string         `mapstructure:"topic"`
-	ConsumerGroup  string         `mapstructure:"consumerGroup"`
 	ProducerConfig ProducerConfig `mapstructure:"producer"`
 	ConsumerConfig ConsumerConfig `mapstructure:"consumer"`
 }
@@ -17,8 +16,8 @@ func ApplyKafkaConfigOverrides(kc KafkaConfig, overrides KafkaConfig) KafkaConfi
 	if overrides.Topic != "" {
 		kc.Topic = overrides.Topic
 	}
-	if overrides.ConsumerGroup != "" {
-		kc.ConsumerGroup = overrides.ConsumerGroup
+	if overrides.ProducerConfig.ClientId != "" {
+		kc.ProducerConfig.ClientId = overrides.ProducerConfig.ClientId
 	}
 	if overrides.ProducerConfig.BatchSize > 0 {
 		kc.ProducerConfig.BatchSize = overrides.ProducerConfig.BatchSize
@@ -31,6 +30,15 @@ func ApplyKafkaConfigOverrides(kc KafkaConfig, overrides KafkaConfig) KafkaConfi
 	}
 	if overrides.ProducerConfig.MaxRetries > 0 {
 		kc.ProducerConfig.MaxRetries = overrides.ProducerConfig.MaxRetries
+	}
+	if overrides.ConsumerConfig.ClientId != "" {
+		kc.ConsumerConfig.ClientId = overrides.ConsumerConfig.ClientId
+	}
+	if overrides.ConsumerConfig.IsolationLevel != "" {
+		kc.ConsumerConfig.IsolationLevel = overrides.ConsumerConfig.IsolationLevel
+	}
+	if overrides.ConsumerConfig.ConsumerGroup != "" {
+		kc.ConsumerConfig.ConsumerGroup = overrides.ConsumerConfig.ConsumerGroup
 	}
 	if overrides.ConsumerConfig.SessionTimeout > 0 {
 		kc.ConsumerConfig.SessionTimeout = overrides.ConsumerConfig.SessionTimeout
@@ -58,6 +66,7 @@ func ApplyKafkaConfigOverrides(kc KafkaConfig, overrides KafkaConfig) KafkaConfi
 }
 
 type ProducerConfig struct {
+	ClientId        string        `mapstructure:"clientId"`
 	BatchSize       int           `mapstructure:"batchSize"`
 	BatchTimeout    time.Duration `mapstructure:"batchTimeout"`
 	CompressionType string        `mapstructure:"compressionType"`
@@ -66,6 +75,9 @@ type ProducerConfig struct {
 }
 
 type ConsumerConfig struct {
+	ClientId           string        `mapstructure:"clientId"`
+	IsolationLevel     string        `mapstructure:"isolationLevel"`
+	ConsumerGroup      string        `mapstructure:"consumerGroup"`
 	SessionTimeout     time.Duration `mapstructure:"sessionTimeout"`
 	HeartbeatInterval  time.Duration `mapstructure:"heartbeatInterval"`
 	MaxPollRecords     int           `mapstructure:"maxPollRecords"`

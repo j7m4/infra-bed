@@ -11,42 +11,65 @@ import (
 	"github.com/infra-bed/go-spikes/pkg/infra"
 	"github.com/infra-bed/go-spikes/pkg/logger"
 	"github.com/rs/zerolog/log"
+	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 )
 
-type ConsumerEngine[T any] struct {
+type ConsumerEngine[T any] interface {
+	Run(ctx context.Context) error
+	Close()
+	CommitMessage(message *k.Message, async bool) error
+	GetMetadata() (*k.Metadata, error)
+}
+
+func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (ConsumerEngine[T], error) {
+	var err error
+	var consumer *k.Consumer
+
+	kafkaConfig := &k.ConfigMap{
+		"bootstrap.servers":    strings.Join(cfg.Brokers, ","),
+		"client.id":            cfg.ConsumerConfig.ClientId,
+		"group.id":             cfg.ConsumerConfig.ConsumerGroup,
+		"auto.offset.reset":    cfg.ConsumerConfig.AutoOffsetReset,
+		"enable.auto.commit":   cfg.ConsumerConfig.AutoCommitEnabled,
+		"session.timeout.ms":   int(cfg.ConsumerConfig.SessionTimeout.Milliseconds()),
+		"max.poll.interval.ms": int(cfg.ConsumerConfig.MaxPollInterval.Milliseconds()),
+	}
+	if int(cfg.ConsumerConfig.AutoCommitInterval.Milliseconds()) > 0 {
+		if err = kafkaConfig.SetKey("auto.commit.interval.ms", int(cfg.ConsumerConfig.AutoCommitInterval.Milliseconds())); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.ConsumerConfig.IsolationLevel != "" {
+		if err = kafkaConfig.SetKey("isolation.level", cfg.ConsumerConfig.IsolationLevel); err != nil {
+			return nil, err
+		}
+	}
+	consumer, err = k.NewConsumer(kafkaConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create consumer: %w", err)
+	}
+
+	return &consumerEngineImpl[T]{
+		consumer:         consumer,
+		connectionConfig: cfg,
+		plugin:           plugin,
+		// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
+		tracer: otel.Tracer("KafkaConsumer"),
+		// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
+	}, nil
+}
+
+type consumerEngineImpl[T any] struct {
 	consumer         *k.Consumer
 	connectionConfig cfg.KafkaConfig
 	plugin           ConsumerPlugin[T]
 	tracer           trace.Tracer
 }
 
-func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (*ConsumerEngine[T], error) {
-	kafkaConfig := &k.ConfigMap{
-		"bootstrap.servers":       strings.Join(cfg.Brokers, ","),
-		"group.id":                cfg.ConsumerGroup,
-		"client.id":               fmt.Sprintf("%s-consumer", cfg.ConsumerGroup),
-		"auto.offset.reset":       cfg.ConsumerConfig.AutoOffsetReset,
-		"enable.auto.commit":      false,
-		"auto.commit.interval.ms": int(cfg.ConsumerConfig.AutoCommitInterval.Milliseconds()),
-		"session.timeout.ms":      int(cfg.ConsumerConfig.SessionTimeout.Milliseconds()),
-		"max.poll.interval.ms":    int(cfg.ConsumerConfig.MaxPollInterval.Milliseconds()),
-	}
-	consumer, err := k.NewConsumer(kafkaConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create consumer: %w", err)
-	}
-
-	return &ConsumerEngine[T]{
-		consumer:         consumer,
-		connectionConfig: cfg,
-		plugin:           plugin,
-		tracer:           otel.Tracer("KafkaConsumer"),
-	}, nil
-}
-
-func (c *ConsumerEngine[T]) Close() {
+func (c *consumerEngineImpl[T]) Close() {
 	if err := c.consumer.Close(); err != nil {
 		log.Error().Err(err).Msg("Failed to close consumer")
 	} else {
@@ -54,45 +77,67 @@ func (c *ConsumerEngine[T]) Close() {
 	}
 }
 
-func (c *ConsumerEngine[T]) Run(ctx context.Context) {
-	var err error
-
-	if err = c.Consume(ctx); err != nil {
-		log.Error().Err(err).Msg("Failed to consume Kafka messages")
-		return
-	}
-}
-
-func (c *ConsumerEngine[T]) Subscribe() error {
-	err := c.consumer.SubscribeTopics([]string{c.connectionConfig.Topic}, nil)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to topic %s: %w", c.connectionConfig.Topic, err)
+func (c *consumerEngineImpl[T]) CommitMessage(message *k.Message, async bool) error {
+	if async {
+		go func(message *k.Message) {
+			if _, err := c.consumer.Commit(); err != nil {
+				log.Error().
+					Err(err).
+					Int32("partition", message.TopicPartition.Partition).
+					Int64("offset", int64(message.TopicPartition.Offset)).
+					Msg("Failed to commit message asynchronously")
+			}
+		}(message)
+	} else {
+		if _, err := c.consumer.CommitMessage(message); err != nil {
+			log.Error().
+				Err(err).
+				Int32("partition", message.TopicPartition.Partition).
+				Int64("offset", int64(message.TopicPartition.Offset)).
+				Msg("Failed to commit message")
+		}
 	}
 	return nil
 }
 
-func (c *ConsumerEngine[T]) Consume(ctx context.Context) error {
+func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
+
+	if c.plugin.GetInitialDelayDuration() > 0 {
+		delayTimer := infra.StartInitialDelayTimer(ctx, c.plugin)
+		for {
+			select {
+			case <-delayTimer:
+				continue
+			case <-ctx.Done():
+				log.Info().Msg("Context done before initial delay completed")
+				return ctx.Err()
+			default:
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}
 
 	log := logger.Ctx(ctx)
 	log.Info().
 		Str("topic", c.connectionConfig.Topic).
-		Str("group", c.connectionConfig.ConsumerGroup).
+		Str("group", c.connectionConfig.ConsumerConfig.ConsumerGroup).
 		Msg("Starting consumer")
 
 	count := 0
 	batchSize := 10000
 	batchConsumeMsg := fmt.Sprintf("kafka.consume.batch: %d", batchSize)
-	settings := DefaultConsumeTestSettings()
 	runTimer := infra.StartRunTimer(ctx, c.plugin)
 	intervalTicker := infra.StartIntervalTicker(ctx, c.plugin)
 
-	if err := c.Subscribe(); err != nil {
+	if err := c.consumer.SubscribeTopics([]string{c.connectionConfig.Topic}, nil); err != nil {
 		return err
 	}
 
+	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 	batchCtx, batchSpan := c.tracer.Start(ctx, batchConsumeMsg)
 	log = logger.Ctx(batchCtx)
 	defer batchSpan.End()
+	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 
 	for {
 		select {
@@ -108,7 +153,6 @@ func (c *ConsumerEngine[T]) Consume(ctx context.Context) error {
 		case <-runTimer:
 			log.Info().
 				Int("consume_count", count).
-				Dur("runTimer", settings.TestTimeout).
 				Msg("consume runTimer reached")
 			return nil
 		default:
@@ -125,7 +169,7 @@ func (c *ConsumerEngine[T]) Consume(ctx context.Context) error {
 					Msg("Received nil message, skipping")
 				continue
 			}
-			if err := c.plugin.ConsumeHandler(batchCtx, msg.Value); err != nil {
+			if err := c.plugin.ConsumeMessageHandler(batchCtx, c, msg); err != nil {
 				log.Error().
 					Err(err).
 					Str("key", string(msg.Key)).
@@ -136,10 +180,12 @@ func (c *ConsumerEngine[T]) Consume(ctx context.Context) error {
 			}
 			count++
 			if count%batchSize == 0 {
+				// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 				// close out old and create new span
 				batchSpan.End()
 				batchCtx, batchSpan = c.tracer.Start(ctx, batchConsumeMsg)
 				log = logger.Ctx(batchCtx)
+				// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 				log.Info().
 					Int("count", count).
 					Int32("partition", msg.TopicPartition.Partition).
@@ -150,6 +196,6 @@ func (c *ConsumerEngine[T]) Consume(ctx context.Context) error {
 	}
 }
 
-func (c *ConsumerEngine[T]) GetMetadata() (*k.Metadata, error) {
+func (c *consumerEngineImpl[T]) GetMetadata() (*k.Metadata, error) {
 	return c.consumer.GetMetadata(&c.connectionConfig.Topic, false, 5000)
 }

@@ -17,12 +17,15 @@ data:
       topic: test-topic
       consumerGroup: go-spikes-consumer
       producer:
+        clientId: go-spikes-producer
         batchSize: 100
         batchTimeout: 1s
         compressionType: snappy
         maxRetries: 3
         acks: all
       consumer:
+        clientId: go-spikes-consumer
+        isolationLevel: read_committed
         heartbeatInterval: 3s
         maxPollRecords: 500
         autoOffsetReset: earliest
@@ -82,23 +85,26 @@ data:
       entityRepo:
         plugins:
           consumer:
-            runDuration: 2m
-            intervalDuration: 1ns
+            runDuration: 5m
+            intervalDuration: 2ms
           producer:
             entityCount: 10000
             attributeCount: 5
             runDuration: 2m
-            intervalDuration: 1s
+            intervalDuration: 1ms
         kafkaOverrides:
           brokers:
           - persistent-cluster-kafka-bootstrap.streaming:9092
           topic: entity-repo
-          consumerGroup: entity-repo-consumer
           producer:
+            clientId: entity-repo-producer
             batchSize: 100
             batchTimeout: 1s
             compressionType: snappy
             maxRetries: 3
           consumer:
+            clientId: entity-repo-consumer
+            isolationLevel: read_committed
             autoOffsetReset: earliest
             autoCommitEnabled: false
+            consumerGroup: entity-repo-consumer

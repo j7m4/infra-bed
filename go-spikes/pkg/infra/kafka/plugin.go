@@ -3,25 +3,21 @@ package kafka
 import (
 	"context"
 	"time"
+
+	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
-/*
-type Plugin[T any] interface {
-	ConsumeHandler(context.Context, []byte) error
-	ProduceListener(context.Context)
-	Payloads(ctx context.Context) (<-chan T, error)
-}
-*/
-
 type ProducerPlugin[T any] interface {
-	ProduceListener(context.Context)
+	ProduceMessageListener(ctx context.Context, engine ProducerEngine[T], message *k.Message) error
 	Payloads(ctx context.Context) (<-chan T, error)
+	GetInitialDelayDuration() time.Duration
 	GetRunDuration() time.Duration
 	GetIntervalDuration() time.Duration
 }
 
 type ConsumerPlugin[T any] interface {
-	ConsumeHandler(context.Context, []byte) error
+	ConsumeMessageHandler(ctx context.Context, engine ConsumerEngine[T], message *k.Message) error
+	GetInitialDelayDuration() time.Duration
 	GetRunDuration() time.Duration
 	GetIntervalDuration() time.Duration
 }

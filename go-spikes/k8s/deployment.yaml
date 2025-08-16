@@ -23,15 +23,21 @@ spec:
         ports:
         - containerPort: 8080
           name: http
+        # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
         - containerPort: 6060
           name: pprof
+        # CROSS-CUTTING END OF pyroscope CONFIGURATION FOR go-spikes
         env:
+        # CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR go-spikes
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "alloy.observability:4317"
         - name: OTEL_SERVICE_NAME
           value: "go-spikes"
+        # CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR go-spikes
+        # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
         - name: PYROSCOPE_ADDRESS
           value: "http://lgtm.observability:4040"
+        # CROSS-CUTTING END OF pyroscope CONFIGURATION FOR go-spikes
         - name: CONFIG_PATH
           value: "/etc/config/config.yaml"
         volumeMounts:
@@ -77,7 +83,9 @@ spec:
   - name: http
     port: 8080
     targetPort: 8080
+  # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
   - name: pprof
     port: 6060
     targetPort: 6060
+  # CROSS-CUTTING END OF pyroscope CONFIGURATION FOR go-spikes
   type: ClusterIP
