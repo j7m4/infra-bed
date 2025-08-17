@@ -48,12 +48,16 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 	callback := make(chan Response)
 
 	execute := func(ctx context.Context) {
+		log := logger.WithContext(ctx)
 		go func() {
 			producerEngine.Run(ctx)
 			defer producerEngine.Close()
 		}()
 		go func() {
-			consumerEngine.Run(ctx)
+			err := consumerEngine.Run(ctx)
+			if err != nil {
+				log.Error().Err(err).Msg("Consumer Engine Run() error")
+			}
 			defer consumerEngine.Close()
 		}()
 	}

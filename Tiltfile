@@ -1,16 +1,15 @@
 # Load extensions
 load('ext://namespace', 'namespace_create')
 
-# Check if Kind cluster exists and use tacops-dev as fallback
+# Check if Kind cluster exists
 cluster_exists = str(local('kind get clusters | grep -q infra-bed && echo "exists" || echo "not found"', quiet=True)).strip()
 if cluster_exists == "not found":
-    print("⚠️  Kind cluster 'infra-bed' not found. Using tacops-dev cluster instead.")
-    cluster_name = 'tacops-dev'
+    print("⚠️  Kind cluster 'infra-bed' not found. Please create it first by running './setup.sh'")
+    # stop execution if cluster not found
+    fail("Kind cluster 'infra-bed' not found.")
 else:
-    cluster_name = 'infra-bed'
-
-# Set kubectl context
-local('kubectl config use-context kind-' + cluster_name, quiet=True)
+    # Set kubectl context
+    local('kubectl config use-context kind-infra-bed', quiet=True)
 
 # Create namespace
 namespace_create('observability')
@@ -51,12 +50,31 @@ k8s_resource('kube-state-metrics',
     labels=['o11y']
 )
 
+#k8s_yaml('k8s/metrics-server-patched.yaml')
+#k8s_resource('metrics-server',
+#    labels=['o11y']
+#)
+
 # Helper commands
 local_resource(
     'grafana-login',
-    cmd='echo "Grafana URL: http://localhost:3000\\nUsername: admin\\nPassword: admin"',
+    cmd='echo "Grafana URL: http://localhost:3000\nUsername: admin\nPassword: admin"',
     labels=['helpers']
 )
+
+local_resource('deploy-metrics-server',
+    cmd='kubectl apply -f k8s/metrics-server-patched.yaml',
+    labels=['o11y'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+#local_resource('check-metrics-server',
+#    cmd='kubectl get pods -n kube-system | grep metrics-server',
+#    labels=['helpers'],
+#    trigger_mode=TRIGGER_MODE_MANUAL,
+#    auto_init=False
+#)
 
 ##################################################
 # METRICS EXPORTERS

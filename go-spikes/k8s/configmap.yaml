@@ -89,7 +89,7 @@ data:
           consumer:
             runDuration: 2m
             initialDelay: 1s
-            intervalDuration: 10ns
+            intervalDuration: 100ns
             logBatchSize: 100
           producer:
             entityCount: 10

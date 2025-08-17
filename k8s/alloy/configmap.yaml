@@ -42,99 +42,121 @@ data:
     }
 
     // CROSS-CUTTING START OF alloy CONFIGURATION FOR go-spikes
-    pyroscope.scrape "pprof" {
-      targets = [
-        {
-          __address__ = "go-spikes.default:6060",
-          __scheme__  = "http",
-          __profile_path__ = "/debug/pprof/profile?seconds=10",
-          service_name = "go-spikes",
-          job = "go-spikes-cpu",
-          profile_type = "cpu",
-        },
-        {
-          __address__ = "go-spikes.default:6060",
-          __scheme__  = "http",
-          __profile_path__ = "/debug/pprof/heap",
-          service_name = "go-spikes",
-          job = "go-spikes-heap",
-          profile_type = "heap",
-        },
-        {
-          __address__ = "go-spikes.default:6060",
-          __scheme__  = "http",
-          __profile_path__ = "/debug/pprof/goroutine",
-          service_name = "go-spikes",
-          job = "go-spikes-goroutine",
-          profile_type = "goroutine",
-        },
-      ]
+    discovery.kubernetes "go_spikes" {
+      role = "pod"
+      selectors {
+        role = "pod"
+        label = "app=go-spikes"
+      }
+    }
+    
+    discovery.relabel "go_spikes_pprof" {
+      targets = discovery.kubernetes.go_spikes.targets
+    
+      rule {
+        // Keep only the targets where the container port is 6060.
+        action       = "keep"
+        source_labels = ["__meta_kubernetes_pod_container_port_number"]
+        regex        = "6060"
+      }
+    
+      rule {
+        // Take the pod's IP address and the discovered port number
+        // and combine them to form the final scrape address.
+        action       = "replace"
+        source_labels = ["__meta_kubernetes_pod_ip", "__meta_kubernetes_pod_container_port_number"]
+        regex        = "([^:]+);(\\d+)" // Capture IP and port
+        replacement  = "$1:$2"         // Combine them as "ip:port"
+        target_label = "__address__"
+      }
+    }
 
+    pyroscope.scrape "pprof" {
+      targets    = discovery.relabel.go_spikes_pprof.output
       forward_to = [pyroscope.write.lgtm.receiver]
+    
+      profiling_config {
+        profile.process_cpu {
+          enabled = true
+        }
+        profile.memory {
+          enabled = true
+        }
+        profile.goroutine {
+          enabled = true
+        }
+        profile.mutex {
+          enabled = true
+        }
+      }
     }
 
     pyroscope.write "lgtm" {
       endpoint {
-        url = "http://pyroscope:4040"
+        url = "http://pyroscope.observability:4040"
       }
     }
     // CROSS-CUTTING END OF alloy CONFIGURATION FOR go-spikes
     
     // CROSS-CUTTING START OF alloy CONFIGURATION FOR kafka
+    discovery.kubernetes "kafka_exporter" {
+      role = "pod"
+      selectors {
+        role = "pod"
+        label = "app=kafka-exporter"
+      }
+    }
+
     prometheus.scrape "kafka_exporter" {
-      targets = [
-        {
-          __address__ = "kafka-exporter.streaming:9308",
-          __scheme__  = "http",
-          service_name = "kafka",
-          job = "kafka-exporter",
-        },
-      ]
+      targets = discovery.kubernetes.kafka_exporter.targets
       forward_to = [otelcol.receiver.prometheus.default.receiver]
       scrape_interval = "30s"
     }
     // CROSS-CUTTING END OF alloy CONFIGURATION FOR kafka
     
     // CROSS-CUTTING START OF alloy CONFIGURATION FOR mysql
+    discovery.kubernetes "mysql_exporter" {
+      role = "pod"
+      selectors {
+        role = "pod"
+        label = "app=mysql-exporter"
+      }
+    }
+
     prometheus.scrape "mysql_exporter" {
-      targets = [
-        {
-          __address__ = "mysql-exporter.db:9104",
-          __scheme__  = "http",
-          service_name = "mysql",
-          job = "mysql-exporter",
-        },
-      ]
+      targets = discovery.kubernetes.mysql_exporter.targets
       forward_to = [otelcol.receiver.prometheus.default.receiver]
       scrape_interval = "30s"
     }
     // CROSS-CUTTING END OF alloy CONFIGURATION FOR mysql
     
     // CROSS-CUTTING START OF alloy CONFIGURATION FOR postgres
+    discovery.kubernetes "postgres_exporter" {
+      role = "pod"
+      selectors {
+        role = "pod"
+        label = "app=postgres-exporter"
+      }
+    }
+
     prometheus.scrape "postgres_exporter" {
-      targets = [
-        {
-          __address__ = "postgres-exporter.db:9187",
-          __scheme__  = "http",
-          service_name = "postgres",
-          job = "postgres-exporter",
-        },
-      ]
+      targets = discovery.kubernetes.postgres_exporter.targets
       forward_to = [otelcol.receiver.prometheus.default.receiver]
       scrape_interval = "30s"
     }
     // CROSS-CUTTING END OF alloy CONFIGURATION FOR postgres
     
     // Kube-state-metrics scraping
+    discovery.kubernetes "kube_state_metrics" {
+      role = "pod"
+      selectors {
+        role = "pod"
+        label = "app=kube-state-metrics"
+      }
+    }
+
     prometheus.scrape "kube_state_metrics" {
-      targets = [
-        {
-          __address__ = "kube-state-metrics.observability:8080",
-          __scheme__  = "http",
-          service_name = "kube-state-metrics",
-          job = "kube-state-metrics",
-        },
-      ]
+      targets = discovery.kubernetes.kube_state_metrics.targets
       forward_to = [otelcol.receiver.prometheus.default.receiver]
       scrape_interval = "30s"
     }

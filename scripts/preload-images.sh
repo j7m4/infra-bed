@@ -10,6 +10,7 @@ echo "🚀 Preloading images for Kind cluster: $CLUSTER_NAME"
 # List of images to preload
 IMAGES=(
   "bitnami/kubectl:1.33.3"
+  "registry.k8s.io/metrics-server/metrics-server:v0.8.0"
 
   # MySQL stack
   "container-registry.oracle.com/mysql/community-operator:9.4.0-2.2.5"
