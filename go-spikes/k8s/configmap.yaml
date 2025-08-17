@@ -6,7 +6,7 @@ metadata:
 data:
   config.yaml: |
     server:
-      port: 8080
+      port: 8888
       readTimeout: 30s
       writeTimeout: 30s
       idleTimeout: 120s
@@ -89,14 +89,14 @@ data:
           consumer:
             runDuration: 2m
             initialDelay: 1s
-            intervalDuration: 10ms
+            intervalDuration: 10ns
             logBatchSize: 100
           producer:
             entityCount: 10
             attributeCount: 5
-            runDuration: 2m
+            runDuration: 1s
             initialDelay: 1s
-            intervalDuration: 10ms
+            intervalDuration: 1s
             logBatchSize: 100
         kafkaOverrides:
           brokers:

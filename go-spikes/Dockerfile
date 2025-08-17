@@ -21,6 +21,6 @@ ENV LOG_LEVEL=debug
 
 COPY --from=builder /app/go-spikes .
 
-EXPOSE 8080 6060
+EXPOSE 8888 6060
 
 CMD ["./go-spikes"]

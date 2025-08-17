@@ -45,6 +45,12 @@ k8s_resource('alloy',
     resource_deps=['lgtm', 'pyroscope']
 )
 
+k8s_yaml('k8s/kube-state-metrics.yaml')
+k8s_resource('kube-state-metrics',
+    port_forwards=['8080:8080'],
+    labels=['o11y']
+)
+
 # Helper commands
 local_resource(
     'grafana-login',
@@ -156,21 +162,21 @@ k8s_yaml([
     'go-spikes/k8s/deployment.yaml'
 ])
 k8s_resource('go-spikes',
-    port_forwards=['8080:8080', '6060:6060'],
+    port_forwards=['8888:8888', '6060:6060'],
     labels=['spikes'],
     resource_deps=['alloy']
 )
 
 # Spike commands
 local_resource('run-fibonacci',
-    cmd='curl http://localhost:8080/cpu/fibonacci/40',
+    cmd='curl http://localhost:8888/cpu/fibonacci/40',
     labels=['spikes'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False
 )
 
 local_resource('run-entity-repo-kafka',
-    cmd='curl http://localhost:8080/kafka/entity-repo',
+    cmd='curl http://localhost:8888/kafka/entity-repo',
     labels=['spikes'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False

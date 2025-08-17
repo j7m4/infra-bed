@@ -245,7 +245,7 @@ func (cm *ConfigManager) reloadFromFile(configPath string) error {
 }
 
 func (cm *ConfigManager) setDefaultsForViper(v *viper.Viper) {
-	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.port", 8888)
 	v.SetDefault("server.readTimeout", "30s")
 	v.SetDefault("server.writeTimeout", "30s")
 	v.SetDefault("server.idleTimeout", "120s")

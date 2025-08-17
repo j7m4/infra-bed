@@ -21,7 +21,7 @@ spec:
         image: go-spikes:dev
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 8080
+        - containerPort: 8888
           name: http
         # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
         - containerPort: 6060
@@ -81,8 +81,8 @@ spec:
     app: go-spikes
   ports:
   - name: http
-    port: 8080
-    targetPort: 8080
+    port: 8888
+    targetPort: 8888
   # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
   - name: pprof
     port: 6060
