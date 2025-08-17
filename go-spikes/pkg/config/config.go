@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const DefaultLogBatchSize = 10000
+
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Kafka    k.KafkaConfig  `mapstructure:"kafka"`

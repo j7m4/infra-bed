@@ -7,6 +7,7 @@ import (
 	"time"
 
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/infra-bed/go-spikes/pkg/config"
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 	"github.com/infra-bed/go-spikes/pkg/infra"
 	"github.com/infra-bed/go-spikes/pkg/logger"
@@ -52,6 +53,11 @@ func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (Co
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
 
+	logBatchSize := cfg.ConsumerConfig.LogBatchSize
+	if logBatchSize <= 0 {
+		logBatchSize = config.DefaultLogBatchSize
+	}
+
 	return &consumerEngineImpl[T]{
 		consumer:         consumer,
 		connectionConfig: cfg,
@@ -59,6 +65,7 @@ func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (Co
 		// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 		tracer: otel.Tracer("KafkaConsumer"),
 		// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
+		logBatchSize: logBatchSize,
 	}, nil
 }
 
@@ -67,6 +74,7 @@ type consumerEngineImpl[T any] struct {
 	connectionConfig cfg.KafkaConfig
 	plugin           ConsumerPlugin[T]
 	tracer           trace.Tracer
+	logBatchSize     int
 }
 
 func (c *consumerEngineImpl[T]) Close() {
@@ -103,19 +111,13 @@ func (c *consumerEngineImpl[T]) CommitMessage(message *k.Message, async bool) er
 func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 
 	if c.plugin.GetInitialDelayDuration() > 0 {
-		delayTimer := infra.StartInitialDelayTimer(ctx, c.plugin)
-		for {
-			select {
-			case <-delayTimer:
-				continue
-			case <-ctx.Done():
-				log.Info().Msg("Context done before initial delay completed")
-				return ctx.Err()
-			default:
-				time.Sleep(100 * time.Millisecond)
-			}
+		select {
+		case <-infra.StartInitialDelayTimer(ctx, c.plugin):
 		}
 	}
+
+	var msg *k.Message
+	var err error
 
 	log := logger.Ctx(ctx)
 	log.Info().
@@ -124,12 +126,11 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 		Msg("Starting consumer")
 
 	count := 0
-	batchSize := 10000
-	batchConsumeMsg := fmt.Sprintf("kafka.consume.batch: %d", batchSize)
+	batchConsumeMsg := fmt.Sprintf("kafka.consume.batch: %d", c.logBatchSize)
 	runTimer := infra.StartRunTimer(ctx, c.plugin)
 	intervalTicker := infra.StartIntervalTicker(ctx, c.plugin)
 
-	if err := c.consumer.SubscribeTopics([]string{c.connectionConfig.Topic}, nil); err != nil {
+	if err = c.consumer.SubscribeTopics([]string{c.connectionConfig.Topic}, nil); err != nil {
 		return err
 	}
 
@@ -146,17 +147,27 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
-			log.Info().
-				Int("consume_count", count).
-				Msg("consume context done")
+			if msg != nil {
+				log.Info().
+					Int("count", count).
+					Int32("partition", msg.TopicPartition.Partition).
+					Int64("offset", int64(msg.TopicPartition.Offset)).
+					Msg(batchConsumeMsg)
+			}
+			log.Info().Int("count", count).Msg("consume context done")
 			return ctx.Err()
 		case <-runTimer:
-			log.Info().
-				Int("consume_count", count).
-				Msg("consume runTimer reached")
+			if msg != nil {
+				log.Info().
+					Int("count", count).
+					Int32("partition", msg.TopicPartition.Partition).
+					Int64("offset", int64(msg.TopicPartition.Offset)).
+					Msg(batchConsumeMsg)
+			}
+			log.Info().Int("count", count).Msg("consume runTimer reached")
 			return nil
 		default:
-			msg, err := c.consumer.ReadMessage(100 * time.Millisecond)
+			msg, err = c.consumer.ReadMessage(100 * time.Millisecond)
 			if err != nil {
 				if err.(k.Error).Code() == k.ErrTimedOut {
 					continue
@@ -179,7 +190,7 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 				continue
 			}
 			count++
-			if count%batchSize == 0 {
+			if count%c.logBatchSize == 0 {
 				// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 				// close out old and create new span
 				batchSpan.End()

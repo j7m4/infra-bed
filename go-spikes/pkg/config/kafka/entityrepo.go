@@ -23,6 +23,7 @@ type ProducerPluginConfig struct {
 	InitialDelayDuration time.Duration `mapstructure:"initialDelay"`
 	RunDuration          time.Duration `mapstructure:"runDuration"`
 	IntervalDuration     time.Duration `mapstructure:"intervalDuration"`
+	LogBatchSize         int           `mapstructure:"logBatchSize"`
 }
 
 // ConsumerPluginConfig determines how the nature of Payload Generator's behavior with:
@@ -32,4 +33,5 @@ type ConsumerPluginConfig struct {
 	InitialDelayDuration time.Duration `mapstructure:"initialDelay"`
 	RunDuration          time.Duration `mapstructure:"runDuration"`
 	IntervalDuration     time.Duration `mapstructure:"intervalDuration"`
+	LogBatchSize         int           `mapstructure:"logBatchSize"`
 }

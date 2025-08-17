@@ -23,6 +23,7 @@ data:
         compressionType: snappy
         maxRetries: 3
         acks: all
+        logBatchSize: 10000
       consumer:
         clientId: go-spikes-consumer
         isolationLevel: read_committed
@@ -33,6 +34,7 @@ data:
         sessionTimeout: 10s
         maxPollInterval: 5m
         autoCommitEnabled: false
+        logBatchSize: 10000
     
     database:
       mysql:
@@ -85,26 +87,30 @@ data:
       entityRepo:
         plugins:
           consumer:
-            runDuration: 5m
-            intervalDuration: 2ms
+            runDuration: 2m
+            initialDelay: 1s
+            intervalDuration: 10ms
+            logBatchSize: 100
           producer:
-            entityCount: 10000
+            entityCount: 10
             attributeCount: 5
             runDuration: 2m
-            intervalDuration: 1ms
+            initialDelay: 1s
+            intervalDuration: 10ms
+            logBatchSize: 100
         kafkaOverrides:
           brokers:
           - persistent-cluster-kafka-bootstrap.streaming:9092
           topic: entity-repo
           producer:
             clientId: entity-repo-producer
-            batchSize: 100
-            batchTimeout: 1s
             compressionType: snappy
             maxRetries: 3
+            logBatchSize: 100
           consumer:
             clientId: entity-repo-consumer
             isolationLevel: read_committed
             autoOffsetReset: earliest
             autoCommitEnabled: false
             consumerGroup: entity-repo-consumer
+            logBatchSize: 100

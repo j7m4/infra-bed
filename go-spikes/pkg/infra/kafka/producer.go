@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/infra-bed/go-spikes/pkg/config"
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 	"github.com/infra-bed/go-spikes/pkg/infra"
 	"github.com/infra-bed/go-spikes/pkg/logger"
@@ -39,6 +39,11 @@ func NewProducerEngine[T any](cfg cfg.KafkaConfig, plugin ProducerPlugin[T]) (Pr
 		return nil, fmt.Errorf("failed to create producer: %w", err)
 	}
 
+	logBatchSize := cfg.ProducerConfig.LogBatchSize
+	if logBatchSize <= 0 {
+		logBatchSize = config.DefaultLogBatchSize
+	}
+
 	return &producerEngineImpl[T]{
 		producer:     producer,
 		config:       cfg,
@@ -47,6 +52,7 @@ func NewProducerEngine[T any](cfg cfg.KafkaConfig, plugin ProducerPlugin[T]) (Pr
 		// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 		tracer: otel.Tracer("KafkaProducer"),
 		// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
+		logBatchSize: logBatchSize,
 	}, nil
 }
 
@@ -56,6 +62,7 @@ type producerEngineImpl[T any] struct {
 	deliveryChan chan k.Event
 	plugin       ProducerPlugin[T]
 	tracer       trace.Tracer
+	logBatchSize int
 }
 
 func (p *producerEngineImpl[T]) Run(ctx context.Context) {
@@ -83,17 +90,8 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 	log := logger.Ctx(ctx)
 
 	if p.plugin.GetInitialDelayDuration() > 0 {
-		delayTimer := infra.StartInitialDelayTimer(ctx, p.plugin)
-		for {
-			select {
-			case <-delayTimer:
-				continue
-			case <-ctx.Done():
-				log.Info().Msg("Context done before initial delay completed")
-				return ctx.Err()
-			default:
-				time.Sleep(100 * time.Millisecond)
-			}
+		select {
+		case <-infra.StartInitialDelayTimer(ctx, p.plugin):
 		}
 	}
 
@@ -101,8 +99,7 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 	go p.messageDeliveryEventHandler(ctx)
 
 	count := 0
-	batchSize := 10000
-	batchProduceMsg := fmt.Sprintf("kafka.produce.batch: %d", batchSize)
+	batchProduceMsg := fmt.Sprintf("kafka.produce.batch: %d", p.logBatchSize)
 
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 	batchCtx, batchSpan := p.tracer.Start(ctx, batchProduceMsg)
@@ -120,8 +117,12 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 		}
 		select {
 		case <-ctx.Done():
+			log.Info().Int("count", count).Msg(batchProduceMsg)
+			log.Info().Msg("producer context done")
 			return ctx.Err()
 		case <-runTimer:
+			log.Info().Int("count", count).Msg(batchProduceMsg)
+			log.Info().Msg("producer run time elapsed")
 			return ctx.Err()
 		default:
 			if err := p.producePayloadAsync(payload); err != nil {
@@ -129,7 +130,7 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 				continue
 			}
 			count++
-			if count%batchSize == 0 {
+			if count%p.logBatchSize == 0 {
 				// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 				// close out old and create new span
 				batchSpan.End()
@@ -139,6 +140,7 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 			}
 		}
 	}
+	log.Info().Int("count", count).Msg(batchProduceMsg)
 
 	p.producer.Flush(15 * 1000)
 	log.Info().Int("count", count).Msg("Finished producing payloads")
@@ -183,7 +185,10 @@ func (p *producerEngineImpl[T]) messageDeliveryEventHandler(ctx context.Context)
 						Str("key", string(ev.Key)).
 						Msg("Delivery failed")
 				} else {
-					p.plugin.ProduceMessageListener(ctx, p, ev)
+					err := p.plugin.ProduceMessageListener(ctx, p, ev)
+					if err != nil {
+						log.Error().Err(err).Msg("Failed on ProduceMessageListener")
+					}
 				}
 			}
 		}

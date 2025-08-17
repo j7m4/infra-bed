@@ -6,19 +6,26 @@ import (
 	"time"
 
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/infra-bed/go-spikes/pkg/config"
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 	infra "github.com/infra-bed/go-spikes/pkg/infra/kafka"
 	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
 type ProducerPlugin struct {
-	pluginCfg cfg.ProducerPluginConfig
-	counter   int
+	pluginCfg    cfg.ProducerPluginConfig
+	counter      int
+	logBatchSize int
 }
 
 func NewProducerPlugin(pluginCfg cfg.ProducerPluginConfig) *ProducerPlugin {
+	logBatchSize := pluginCfg.LogBatchSize
+	if logBatchSize <= 0 {
+		logBatchSize = config.DefaultLogBatchSize
+	}
 	return &ProducerPlugin{
-		pluginCfg: pluginCfg,
+		pluginCfg:    pluginCfg,
+		logBatchSize: logBatchSize,
 	}
 }
 
@@ -42,7 +49,7 @@ func (p *ProducerPlugin) ProduceMessageListener(ctx context.Context, engine infr
 		return err
 	}
 	p.counter++
-	if p.counter%10000 == 0 {
+	if p.counter%p.logBatchSize == 0 {
 		log.Info().
 			Int("produceCount", p.counter).
 			Int64("offset", int64(msg.TopicPartition.Offset)).
@@ -56,15 +63,21 @@ func (p *ProducerPlugin) Payloads(ctx context.Context) (<-chan Payload, error) {
 }
 
 type ConsumerPlugin struct {
-	entities  map[string]*Payload
-	pluginCfg cfg.ConsumerPluginConfig
-	counter   int
+	entities     map[string]*Payload
+	pluginCfg    cfg.ConsumerPluginConfig
+	counter      int
+	logBatchSize int
 }
 
 func NewConsumerPlugin(pluginCfg cfg.ConsumerPluginConfig) *ConsumerPlugin {
+	logBatchSize := pluginCfg.LogBatchSize
+	if logBatchSize <= 0 {
+		logBatchSize = config.DefaultLogBatchSize
+	}
 	return &ConsumerPlugin{
-		entities:  make(map[string]*Payload),
-		pluginCfg: pluginCfg,
+		entities:     make(map[string]*Payload),
+		pluginCfg:    pluginCfg,
+		logBatchSize: logBatchSize,
 	}
 }
 
@@ -80,7 +93,7 @@ func (c *ConsumerPlugin) ConsumeMessageHandler(ctx context.Context, engine infra
 		log.Error().Err(err).Msg("Failed to commit message")
 	}
 	c.counter++
-	if c.counter%10000 == 0 {
+	if c.counter%c.logBatchSize == 0 {
 		log.Info().
 			Int("consumeCount", c.counter).
 			Int("entityCount", len(c.entities)).

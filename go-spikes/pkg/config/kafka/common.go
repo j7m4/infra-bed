@@ -19,17 +19,14 @@ func ApplyKafkaConfigOverrides(kc KafkaConfig, overrides KafkaConfig) KafkaConfi
 	if overrides.ProducerConfig.ClientId != "" {
 		kc.ProducerConfig.ClientId = overrides.ProducerConfig.ClientId
 	}
-	if overrides.ProducerConfig.BatchSize > 0 {
-		kc.ProducerConfig.BatchSize = overrides.ProducerConfig.BatchSize
-	}
-	if overrides.ProducerConfig.BatchTimeout > 0 {
-		kc.ProducerConfig.BatchTimeout = overrides.ProducerConfig.BatchTimeout
-	}
 	if overrides.ProducerConfig.CompressionType != "" {
 		kc.ProducerConfig.CompressionType = overrides.ProducerConfig.CompressionType
 	}
 	if overrides.ProducerConfig.MaxRetries > 0 {
 		kc.ProducerConfig.MaxRetries = overrides.ProducerConfig.MaxRetries
+	}
+	if overrides.ProducerConfig.LogBatchSize > 0 {
+		kc.ProducerConfig.LogBatchSize = overrides.ProducerConfig.LogBatchSize
 	}
 	if overrides.ConsumerConfig.ClientId != "" {
 		kc.ConsumerConfig.ClientId = overrides.ConsumerConfig.ClientId
@@ -61,17 +58,19 @@ func ApplyKafkaConfigOverrides(kc KafkaConfig, overrides KafkaConfig) KafkaConfi
 	if overrides.ConsumerConfig.MaxPollInterval > 0 {
 		kc.ConsumerConfig.MaxPollInterval = overrides.ConsumerConfig.MaxPollInterval
 	}
+	if overrides.ConsumerConfig.LogBatchSize > 0 {
+		kc.ConsumerConfig.LogBatchSize = overrides.ConsumerConfig.LogBatchSize
+	}
 
 	return kc
 }
 
 type ProducerConfig struct {
-	ClientId        string        `mapstructure:"clientId"`
-	BatchSize       int           `mapstructure:"batchSize"`
-	BatchTimeout    time.Duration `mapstructure:"batchTimeout"`
-	CompressionType string        `mapstructure:"compressionType"`
-	MaxRetries      int           `mapstructure:"maxRetries"`
-	Acks            string        `mapstructure:"acks"` // "all", "1", "0"
+	ClientId        string `mapstructure:"clientId"`
+	CompressionType string `mapstructure:"compressionType"`
+	MaxRetries      int    `mapstructure:"maxRetries"`
+	Acks            string `mapstructure:"acks"` // "all", "1", "0"
+	LogBatchSize    int    `mapstructure:"logBatchSize"`
 }
 
 type ConsumerConfig struct {
@@ -85,4 +84,5 @@ type ConsumerConfig struct {
 	AutoCommitInterval time.Duration `mapstructure:"autoCommitInterval"`
 	AutoCommitEnabled  bool          `mapstructure:"autoCommitEnabled"`
 	MaxPollInterval    time.Duration `mapstructure:"maxPollInterval"`
+	LogBatchSize       int           `mapstructure:"logBatchSize"`
 }
