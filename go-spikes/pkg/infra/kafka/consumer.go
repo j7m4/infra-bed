@@ -11,7 +11,7 @@ import (
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 	"github.com/infra-bed/go-spikes/pkg/infra"
 	"github.com/infra-bed/go-spikes/pkg/logger"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -21,7 +21,8 @@ import (
 type ConsumerEngine[T any] interface {
 	Run(ctx context.Context) error
 	Close()
-	CommitMessage(message *k.Message, async bool) error
+	AcceptMessage(message *k.Message) error
+	RejectMessage(message *k.Message) error
 	GetMetadata() (*k.Metadata, error)
 }
 
@@ -66,6 +67,7 @@ func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (Co
 		tracer: otel.Tracer("KafkaConsumer"),
 		// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 		logBatchSize: logBatchSize,
+		log:          logger.Get(),
 	}, nil
 }
 
@@ -75,30 +77,26 @@ type consumerEngineImpl[T any] struct {
 	plugin           ConsumerPlugin[T]
 	tracer           trace.Tracer
 	logBatchSize     int
+	log              *zerolog.Logger
 }
 
 func (c *consumerEngineImpl[T]) Close() {
 	if err := c.consumer.Close(); err != nil {
-		log.Error().Err(err).Msg("Failed to close consumer")
+		c.log.Error().Err(err).Msg("Failed to close consumer")
 	} else {
-		log.Info().Msg("Consumer closed successfully")
+		c.log.Info().Msg("Consumer closed successfully")
 	}
 }
 
-func (c *consumerEngineImpl[T]) CommitMessage(message *k.Message, async bool) error {
-	if async {
-		go func(message *k.Message) {
-			if _, err := c.consumer.Commit(); err != nil {
-				log.Error().
-					Err(err).
-					Int32("partition", message.TopicPartition.Partition).
-					Int64("offset", int64(message.TopicPartition.Offset)).
-					Msg("Failed to commit message asynchronously")
-			}
-		}(message)
-	} else {
+func (c *consumerEngineImpl[T]) AcceptMessage(message *k.Message) error {
+	if message == nil {
+		c.log.Warn().Msg("Received nil message, cannot accept")
+		return nil
+	}
+	// commit manually, if not auto-commit enabled
+	if !c.connectionConfig.ConsumerConfig.AutoCommitEnabled {
 		if _, err := c.consumer.CommitMessage(message); err != nil {
-			log.Error().
+			c.log.Error().
 				Err(err).
 				Int32("partition", message.TopicPartition.Partition).
 				Int64("offset", int64(message.TopicPartition.Offset)).
@@ -108,19 +106,28 @@ func (c *consumerEngineImpl[T]) CommitMessage(message *k.Message, async bool) er
 	return nil
 }
 
+func (c *consumerEngineImpl[T]) RejectMessage(message *k.Message) error {
+	if message == nil {
+		c.log.Warn().Msg("Received nil message, cannot reject")
+		return nil
+	}
+	return nil
+}
+
 func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 
 	if c.plugin.GetInitialDelayDuration() > 0 {
 		select {
 		case <-infra.StartInitialDelayTimer(ctx, c.plugin):
+			c.log.Trace().Msg("Consumer initialDelay")
 		}
 	}
+	c.log.Trace().Msg("Consumer post-initialDelay")
 
 	var msg *k.Message
 	var err error
 
-	log := logger.Ctx(ctx)
-	log.Info().
+	c.log.Info().
 		Str("topic", c.connectionConfig.Topic).
 		Str("group", c.connectionConfig.ConsumerConfig.ConsumerGroup).
 		Msg("Starting consumer")
@@ -128,7 +135,7 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 	count := 0
 	batchConsumeMsg := fmt.Sprintf("kafka.consume.batch: %d", c.logBatchSize)
 	runTimer := infra.StartRunTimer(ctx, c.plugin)
-	intervalTicker := infra.StartIntervalTicker(ctx, c.plugin)
+	intervalTimer := infra.NewIntervalTimer(ctx, c.plugin)
 
 	if err = c.consumer.SubscribeTopics([]string{c.connectionConfig.Topic}, nil); err != nil {
 		return err
@@ -136,52 +143,50 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 	batchCtx, batchSpan := c.tracer.Start(ctx, batchConsumeMsg)
-	log = logger.Ctx(batchCtx)
+	batchLog := logger.Ctx(batchCtx)
 	defer batchSpan.End()
 	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 
 	for {
-		select {
-		case <-intervalTicker.C:
-			log.Trace().Msg("Consumer tick")
-		}
+		intervalTimer.NextTickWait()
 		select {
 		case <-ctx.Done():
 			if msg != nil {
-				log.Info().
+				batchLog.Info().
 					Int("count", count).
 					Int32("partition", msg.TopicPartition.Partition).
 					Int64("offset", int64(msg.TopicPartition.Offset)).
 					Msg(batchConsumeMsg)
 			}
-			log.Info().Int("count", count).Msg("consume context done")
+			batchLog.Info().Int("count", count).Msg("consume context done")
 			return ctx.Err()
 		case <-runTimer:
 			if msg != nil {
-				log.Info().
+				batchLog.Info().
 					Int("count", count).
 					Int32("partition", msg.TopicPartition.Partition).
 					Int64("offset", int64(msg.TopicPartition.Offset)).
 					Msg(batchConsumeMsg)
 			}
-			log.Info().Int("count", count).Msg("consume runTimer reached")
+			batchLog.Info().Int("count", count).Msg("consume runTimer reached")
 			return nil
 		default:
+			batchLog.Trace().Msg("Consumer reading message")
 			msg, err = c.consumer.ReadMessage(100 * time.Millisecond)
 			if err != nil {
 				if err.(k.Error).Code() == k.ErrTimedOut {
 					continue
 				}
-				log.Error().Err(err).Msg("Error reading message")
+				batchLog.Error().Err(err).Msg("Error reading message")
 				continue
 			}
 			if msg == nil {
-				log.Warn().
+				batchLog.Warn().
 					Msg("Received nil message, skipping")
 				continue
 			}
 			if err := c.plugin.ConsumeMessageHandler(batchCtx, c, msg); err != nil {
-				log.Error().
+				batchLog.Error().
 					Err(err).
 					Str("key", string(msg.Key)).
 					Int32("partition", msg.TopicPartition.Partition).
@@ -195,9 +200,8 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 				// close out old and create new span
 				batchSpan.End()
 				batchCtx, batchSpan = c.tracer.Start(ctx, batchConsumeMsg)
-				log = logger.Ctx(batchCtx)
 				// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
-				log.Info().
+				batchLog.Info().
 					Int("count", count).
 					Int32("partition", msg.TopicPartition.Partition).
 					Int64("offset", int64(msg.TopicPartition.Offset)).

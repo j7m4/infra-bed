@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -63,12 +64,26 @@ func Ctx(ctx context.Context) *zerolog.Logger {
 	return &l
 }
 
-func SetDebugLevel() {
-	setLevel(zerolog.DebugLevel)
-}
-
-func SetInfoLevel() {
-	setLevel(zerolog.InfoLevel)
+func SetLogLevel(level string) {
+	switch strings.ToLower(level) {
+	case "trace":
+		setLevel(zerolog.TraceLevel)
+	case "debug":
+		setLevel(zerolog.DebugLevel)
+	case "info":
+		setLevel(zerolog.InfoLevel)
+	case "warn":
+		setLevel(zerolog.WarnLevel)
+	case "error":
+		setLevel(zerolog.ErrorLevel)
+	case "fatal":
+		setLevel(zerolog.FatalLevel)
+	case "panic":
+		setLevel(zerolog.PanicLevel)
+	default:
+		Logger.Warn().Str("level", level).Msg("Unknown log level, defaulting to INFO")
+		setLevel(zerolog.InfoLevel)
+	}
 }
 
 func setLevel(level zerolog.Level) {

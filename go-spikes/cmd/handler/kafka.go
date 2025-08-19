@@ -64,7 +64,7 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 
 	go func(callback chan Response) {
 		tracerName := "PerfRunner"
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		ctx := context.Background()
 		traceCtx, span := otel.Tracer(tracerName).Start(ctx, spanName)
 		spanCtx := trace.SpanContextFromContext(traceCtx)
 		traceId := ""
@@ -80,7 +80,6 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 		log.Info().Str("name", spanName).Msg("PerfRunner started")
 
 		defer span.End()
-		defer cancel()
 		go func() {
 			execute(traceCtx)
 		}()

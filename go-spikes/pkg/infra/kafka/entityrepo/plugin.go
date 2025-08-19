@@ -89,7 +89,7 @@ func (c *ConsumerPlugin) ConsumeMessageHandler(ctx context.Context, engine infra
 		return err
 	}
 	c.entities[payload.EntityID] = &payload
-	if err = engine.CommitMessage(msg, true); err != nil {
+	if err = engine.AcceptMessage(msg); err != nil {
 		log.Error().Err(err).Msg("Failed to commit message")
 	}
 	c.counter++

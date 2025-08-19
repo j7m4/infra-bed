@@ -55,13 +55,20 @@ spec:
           value: admin
         - name: GF_FEATURE_TOGGLES_ENABLE
           value: traceqlEditor,traceToProfiles,profilesExplorer
+        - name: GF_INSTALL_PLUGINS
+          value: grafana-pyroscope-datasource
         volumeMounts:
         - name: data
           mountPath: /data
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
       volumes:
       - name: data
         persistentVolumeClaim:
           claimName: lgtm-data
+      - name: datasources
+        configMap:
+          name: grafana-datasources
 ---
 apiVersion: v1
 kind: Service

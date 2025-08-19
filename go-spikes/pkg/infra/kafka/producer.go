@@ -92,7 +92,9 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 	if p.plugin.GetInitialDelayDuration() > 0 {
 		select {
 		case <-infra.StartInitialDelayTimer(ctx, p.plugin):
+			log.Trace().Msg("Producer initialDelay")
 		}
+		log.Trace().Msg("Producer post-initialDelay")
 	}
 
 	go p.fallbackProducerEventHandler(ctx)
@@ -108,13 +110,10 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 
 	runTimer := infra.StartRunTimer(ctx, p.plugin)
-	intervalTicker := infra.StartIntervalTicker(ctx, p.plugin)
+	intervalTimer := infra.NewIntervalTimer(ctx, p.plugin)
 
 	for payload := range payloadChan {
-		select {
-		case <-intervalTicker.C:
-			log.Trace().Msg("Producer tick")
-		}
+		intervalTimer.NextTickWait()
 		select {
 		case <-ctx.Done():
 			log.Info().Int("count", count).Msg(batchProduceMsg)

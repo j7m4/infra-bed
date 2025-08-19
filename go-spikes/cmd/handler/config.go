@@ -57,8 +57,6 @@ func CheckFeature(w http.ResponseWriter, r *http.Request) {
 		enabled = cfg.EnableTracing
 	case "metrics":
 		enabled = cfg.EnableMetrics
-	case "debug":
-		enabled = cfg.EnableDebugLogging
 	default:
 		enabled = configManager.IsFeatureEnabled(feature)
 	}

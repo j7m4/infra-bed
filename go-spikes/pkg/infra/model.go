@@ -17,14 +17,31 @@ type Plugin interface {
 }
 
 func StartInitialDelayTimer(ctx context.Context, plugin Plugin) <-chan time.Time {
-	return time.After(plugin.GetInitialDelayDuration())
+	var result <-chan time.Time
+	if plugin.GetInitialDelayDuration() > 0 {
+		result = time.After(plugin.GetInitialDelayDuration())
+	}
+	return result
 }
 
 func StartRunTimer(ctx context.Context, plugin Plugin) <-chan time.Time {
-	return time.After(plugin.GetRunDuration())
+	var result <-chan time.Time
+	if plugin.GetRunDuration() > 0 {
+		result = time.After(plugin.GetRunDuration())
+	}
+	return result
 }
 
-func StartIntervalTicker(ctx context.Context, plugin Plugin) *time.Ticker {
+type IntervalTimer interface {
+	NextTickWait()
+}
+
+func NewIntervalTimer(ctx context.Context, plugin Plugin) IntervalTimer {
+	if plugin.GetIntervalDuration() <= 0 {
+		return &intervalTimer{
+			ticker: nil,
+		}
+	}
 	tickerCtx, cancel := context.WithCancel(ctx)
 	ticker := time.NewTicker(plugin.GetIntervalDuration())
 	go func() {
@@ -37,5 +54,17 @@ func StartIntervalTicker(ctx context.Context, plugin Plugin) *time.Ticker {
 			}
 		}
 	}()
-	return ticker
+	return &intervalTimer{
+		ticker: ticker.C,
+	}
+}
+
+type intervalTimer struct {
+	ticker <-chan time.Time
+}
+
+func (i *intervalTimer) NextTickWait() {
+	if i.ticker != nil {
+		<-i.ticker
+	}
 }

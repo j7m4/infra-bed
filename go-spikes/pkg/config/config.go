@@ -61,11 +61,11 @@ type PostgresConfig struct {
 }
 
 type FeatureFlags struct {
-	EnableProfiling    bool            `mapstructure:"enableProfiling"`
-	EnableTracing      bool            `mapstructure:"enableTracing"`
-	EnableMetrics      bool            `mapstructure:"enableMetrics"`
-	EnableDebugLogging bool            `mapstructure:"enableDebugLogging"`
-	ExperimentalFlags  map[string]bool `mapstructure:"experimental"`
+	EnableProfiling   bool            `mapstructure:"enableProfiling"`
+	EnableTracing     bool            `mapstructure:"enableTracing"`
+	EnableMetrics     bool            `mapstructure:"enableMetrics"`
+	LogLevel          string          `mapstructure:"logLevel"`
+	ExperimentalFlags map[string]bool `mapstructure:"experimental"`
 }
 
 type MetricsConfig struct {
@@ -285,6 +285,7 @@ func (cm *ConfigManager) setDefaultsForViper(v *viper.Viper) {
 	v.SetDefault("features.enableTracing", true)
 	v.SetDefault("features.enableMetrics", true)
 	v.SetDefault("features.enableDebugLogging", false)
+	v.SetDefault("features.logLevel", "info")
 	v.SetDefault("features.experimental", map[string]bool{})
 
 	v.SetDefault("metrics.scrapeInterval", "10s")

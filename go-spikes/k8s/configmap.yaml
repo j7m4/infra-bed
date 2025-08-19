@@ -30,10 +30,10 @@ data:
         heartbeatInterval: 3s
         maxPollRecords: 500
         autoOffsetReset: earliest
-        autoCommitInterval: 5s
         sessionTimeout: 10s
         maxPollInterval: 5m
-        autoCommitEnabled: false
+        autoCommitEnabled: true
+        autoCommitInterval: 5s
         logBatchSize: 10000
     
     database:
@@ -61,7 +61,7 @@ data:
       enableProfiling: true
       enableTracing: true
       enableMetrics: true
-      enableDebugLogging: true
+      logLevel: debug
       experimental:
         asyncProcessing: false
         cacheWarmup: false
@@ -87,17 +87,23 @@ data:
       entityRepo:
         plugins:
           consumer:
+            # 0 value means run indefinitely
             runDuration: 2m
-            initialDelay: 1s
-            intervalDuration: 100ns
-            logBatchSize: 100
+            # 0 value means no initial delay
+            initialDelayDuration: 0
+            # 0 value means no pause between intervals
+            intervalDuration: 0
+            logBatchSize: 1000
           producer:
             entityCount: 10
             attributeCount: 5
-            runDuration: 1s
-            initialDelay: 1s
-            intervalDuration: 1s
-            logBatchSize: 100
+            # 0 value means run indefinitely
+            runDuration: 1m
+            # 0 value means no initial delay
+            initialDelayDuration: 0
+            # 0 value means no pause between intervals
+            intervalDuration: 1ms
+            logBatchSize: 1000
         kafkaOverrides:
           brokers:
           - persistent-cluster-kafka-bootstrap.streaming:9092
@@ -106,11 +112,12 @@ data:
             clientId: entity-repo-producer
             compressionType: snappy
             maxRetries: 3
-            logBatchSize: 100
+            logBatchSize: 1000
           consumer:
             clientId: entity-repo-consumer
             isolationLevel: read_committed
             autoOffsetReset: earliest
-            autoCommitEnabled: false
+            autoCommitEnabled: true
+            autoCommitInterval: 15s
             consumerGroup: entity-repo-consumer
-            logBatchSize: 100
+            logBatchSize: 1000

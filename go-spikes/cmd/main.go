@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	otelpyroscope "github.com/grafana/otel-profiling-go"
+	"github.com/grafana/pyroscope-go"
 	"github.com/infra-bed/go-spikes/cmd/handler"
 	"github.com/infra-bed/go-spikes/pkg/config"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
@@ -47,7 +48,30 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	return tp, nil
 }
 
+func initPyroscope() {
+	pyroscope.Start(pyroscope.Config{
+		ApplicationName: "go-spikes",
+
+		// replace this with the address of pyroscope server
+		ServerAddress: "http://pyroscope.observability:4040",
+
+		// you can disable logging by setting this to nil
+		Logger: nil, //pyroscope.StandardLogger,
+
+		// Uncomment the following line to enable subset of options; defaults to all profiles
+		//ProfileTypes: []pyroscope.ProfileType{
+		//	pyroscope.ProfileCPU,
+		//	pyroscope.ProfileAllocObjects,
+		//	pyroscope.ProfileAllocSpace,
+		//	pyroscope.ProfileInuseObjects,
+		//	pyroscope.ProfileInuseSpace,
+		//},
+	})
+}
+
 func main() {
+	initPyroscope()
+
 	ctx := context.Background()
 
 	// Initialize logger
@@ -73,26 +97,18 @@ func main() {
 	// Register config change callback
 	cfgManager.OnChange(func(cfg *config.Config) {
 		log.Info().
-			Bool("debug", cfg.Features.EnableDebugLogging).
+			Str("logLevel", cfg.Features.LogLevel).
 			Bool("profiling", cfg.Features.EnableProfiling).
 			Bool("tracing", cfg.Features.EnableTracing).
 			Msg("Configuration updated")
 
-		// Update logger level based on config
-		if cfg.Features.EnableDebugLogging {
-			logger.SetDebugLevel()
-		} else {
-			logger.SetInfoLevel()
-		}
+		logger.SetLogLevel(cfg.Features.LogLevel)
 	})
 
 	// Get initial config
 	cfg := cfgManager.Get()
 
-	// Enable debug logging if set
-	if cfg.Features.EnableDebugLogging {
-		logger.SetDebugLevel()
-	}
+	logger.SetLogLevel(cfg.Features.LogLevel)
 
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR go-spikes
 	// Initialize tracing if enabled
@@ -119,10 +135,6 @@ func main() {
 	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR go-spikes
 
 	// CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
-	// Note: We're using Alloy to scrape pprof endpoints instead of pushing directly
-	// This allows for better integration with the Grafana stack
-
-	// Start pprof server on separate port if profiling is enabled
 	if cfg.Features.EnableProfiling {
 		pprofPort := os.Getenv("PPROF_PORT")
 		if pprofPort == "" {

@@ -19,7 +19,10 @@ namespace_create('streaming')
 #########################################################
 # OBSERVABILITY
 
-k8s_yaml('k8s/lgtm/deployment.yaml', allow_duplicates=True)
+k8s_yaml([
+    'k8s/lgtm/datasources.yaml',
+    'k8s/lgtm/deployment.yaml'
+], allow_duplicates=True)
 k8s_resource('lgtm', 
     port_forwards=[
         '3000:3000',  # Grafana UI
@@ -50,10 +53,6 @@ k8s_resource('kube-state-metrics',
     labels=['o11y']
 )
 
-#k8s_yaml('k8s/metrics-server-patched.yaml')
-#k8s_resource('metrics-server',
-#    labels=['o11y']
-#)
 
 # Helper commands
 local_resource(
@@ -69,12 +68,6 @@ local_resource('deploy-metrics-server',
     auto_init=False
 )
 
-#local_resource('check-metrics-server',
-#    cmd='kubectl get pods -n kube-system | grep metrics-server',
-#    labels=['helpers'],
-#    trigger_mode=TRIGGER_MODE_MANUAL,
-#    auto_init=False
-#)
 
 ##################################################
 # METRICS EXPORTERS
@@ -179,6 +172,7 @@ k8s_yaml([
     'go-spikes/k8s/configmap.yaml',
     'go-spikes/k8s/deployment.yaml'
 ])
+# Allows API and pprof on a single pod
 k8s_resource('go-spikes',
     port_forwards=['8888:8888', '6060:6060'],
     labels=['spikes'],
