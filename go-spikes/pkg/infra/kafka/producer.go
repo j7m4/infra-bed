@@ -10,21 +10,21 @@ import (
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/infra-bed/go-spikes/pkg/config"
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
-	"github.com/infra-bed/go-spikes/pkg/infra"
 	"github.com/infra-bed/go-spikes/pkg/logger"
-	"github.com/rs/zerolog/log"
+	"github.com/infra-bed/go-spikes/pkg/model"
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 )
 
-type ProducerEngine[T any] interface {
+type ProducerJob[T any] interface {
 	Run(ctx context.Context)
 	Close()
+	GetPlugin() model.Plugin
 }
 
-func NewProducerEngine[T any](cfg cfg.KafkaConfig, plugin ProducerPlugin[T]) (ProducerEngine[T], error) {
+func NewProducerJob[T any](cfg cfg.KafkaConfig, plugin ProducerPlugin[T]) (model.Job, error) {
 	configMap := &k.ConfigMap{
 		"bootstrap.servers": strings.Join(cfg.Brokers, ","),
 		"client.id":         cfg.ProducerConfig.ClientId,
@@ -44,7 +44,7 @@ func NewProducerEngine[T any](cfg cfg.KafkaConfig, plugin ProducerPlugin[T]) (Pr
 		logBatchSize = config.DefaultLogBatchSize
 	}
 
-	return &producerEngineImpl[T]{
+	return &producerJobImpl[T]{
 		producer:     producer,
 		config:       cfg,
 		deliveryChan: make(chan k.Event, 1000),
@@ -56,7 +56,7 @@ func NewProducerEngine[T any](cfg cfg.KafkaConfig, plugin ProducerPlugin[T]) (Pr
 	}, nil
 }
 
-type producerEngineImpl[T any] struct {
+type producerJobImpl[T any] struct {
 	producer     *k.Producer
 	config       cfg.KafkaConfig
 	deliveryChan chan k.Event
@@ -65,10 +65,14 @@ type producerEngineImpl[T any] struct {
 	logBatchSize int
 }
 
-func (p *producerEngineImpl[T]) Run(ctx context.Context) {
+func (p *producerJobImpl[T]) GetPlugin() model.Plugin {
+	return p.plugin
+}
+
+func (p *producerJobImpl[T]) Run(ctx context.Context) {
+	log := logger.Ctx(ctx)
 	var err error
 	var payloads <-chan T
-	var log = logger.WithContext(ctx)
 
 	if payloads, err = p.plugin.Payloads(ctx); err != nil {
 		log.Error().Err(err).Msg("Failed to generate Payloads")
@@ -80,25 +84,15 @@ func (p *producerEngineImpl[T]) Run(ctx context.Context) {
 	}
 }
 
-func (p *producerEngineImpl[T]) Close() {
+func (p *producerJobImpl[T]) Close() {
+	log := logger.Get()
 	p.producer.Close()
 	close(p.deliveryChan)
 	log.Info().Msg("Producer closed successfully")
 }
 
-func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan <-chan T) error {
+func (p *producerJobImpl[T]) producePayloads(ctx context.Context, payloadChan <-chan T) error {
 	log := logger.Ctx(ctx)
-
-	if p.plugin.GetInitialDelayDuration() > 0 {
-		select {
-		case <-infra.StartInitialDelayTimer(ctx, p.plugin):
-			log.Trace().Msg("Producer initialDelay")
-		}
-		log.Trace().Msg("Producer post-initialDelay")
-	}
-
-	go p.fallbackProducerEventHandler(ctx)
-	go p.messageDeliveryEventHandler(ctx)
 
 	count := 0
 	batchProduceMsg := fmt.Sprintf("kafka.produce.batch: %d", p.logBatchSize)
@@ -109,19 +103,17 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 	defer batchSpan.End()
 	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 
-	runTimer := infra.StartRunTimer(ctx, p.plugin)
-	intervalTimer := infra.NewIntervalTimer(ctx, p.plugin)
+	intervalTimer := model.NewIntervalTimer(ctx, p.plugin)
+
+	go p.fallbackProducerEventHandler(ctx)
+	go p.messageDeliveryEventHandler(ctx)
 
 	for payload := range payloadChan {
 		intervalTimer.NextTickWait()
 		select {
 		case <-ctx.Done():
 			log.Info().Int("count", count).Msg(batchProduceMsg)
-			log.Info().Msg("producer context done")
-			return ctx.Err()
-		case <-runTimer:
-			log.Info().Int("count", count).Msg(batchProduceMsg)
-			log.Info().Msg("producer run time elapsed")
+			log.Info().Msg("producer done: producePayloads")
 			return ctx.Err()
 		default:
 			if err := p.producePayloadAsync(payload); err != nil {
@@ -149,7 +141,7 @@ func (p *producerEngineImpl[T]) producePayloads(ctx context.Context, payloadChan
 // producePayloadAsync produces a single payload asynchronously.
 // It marshals the payload to JSON, computes a SHA-256 hash for the key.
 // An alternative would be to produce messages transactionally.
-func (p *producerEngineImpl[T]) producePayloadAsync(payload interface{}) error {
+func (p *producerJobImpl[T]) producePayloadAsync(payload interface{}) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
@@ -168,16 +160,20 @@ func (p *producerEngineImpl[T]) producePayloadAsync(payload interface{}) error {
 	return p.producer.Produce(msg, p.deliveryChan)
 }
 
-func (p *producerEngineImpl[T]) messageDeliveryEventHandler(ctx context.Context) {
+func (p *producerJobImpl[T]) messageDeliveryEventHandler(ctx context.Context) {
 	log := logger.Ctx(ctx)
+	counts := make(map[string]int)
+	var totalCounts int
 
 	for {
 		select {
 		case <-ctx.Done():
+			log.Info().Msg("producer done: messageDeliveryEventHandler")
 			return
 		case e := <-p.deliveryChan:
 			switch ev := e.(type) {
 			case *k.Message:
+				counts["Message"]++
 				if ev.TopicPartition.Error != nil {
 					log.Error().
 						Err(ev.TopicPartition.Error).
@@ -189,7 +185,17 @@ func (p *producerEngineImpl[T]) messageDeliveryEventHandler(ctx context.Context)
 						log.Error().Err(err).Msg("Failed on ProduceMessageListener")
 					}
 				}
+			default:
+				counts["other"]++
 			}
+		}
+		totalCounts = 0
+		for _, count := range counts {
+			totalCounts += count
+		}
+		if totalCounts%1000 == 0 {
+			log.Debug().Any("distribution", counts).Msg("producer-delivery-events")
+			counts = make(map[string]int) // Reset counts to avoid memory growth
 		}
 	}
 }
@@ -197,16 +203,20 @@ func (p *producerEngineImpl[T]) messageDeliveryEventHandler(ctx context.Context)
 // fallbackProducerEventHandler is limited to handling error-like Events from the producer.
 // It will receive events from Produce() when there is no delivery channel specified.
 // It will log delivery failures and Kafka errors.
-func (p *producerEngineImpl[T]) fallbackProducerEventHandler(ctx context.Context) {
+func (p *producerJobImpl[T]) fallbackProducerEventHandler(ctx context.Context) {
 	log := logger.Ctx(ctx)
+	counts := make(map[string]int)
+	var totalCounts int
 
 	for {
 		select {
 		case <-ctx.Done():
+			log.Info().Msg("producer done: fallbackProducerEventHandler")
 			return
 		case e := <-p.producer.Events():
 			switch ev := e.(type) {
 			case *k.Message:
+				counts["Message"]++
 				if ev.TopicPartition.Error != nil {
 					log.Error().
 						Err(ev.TopicPartition.Error).
@@ -214,10 +224,21 @@ func (p *producerEngineImpl[T]) fallbackProducerEventHandler(ctx context.Context
 						Msg("Delivery failed")
 				}
 			case k.Error:
+				counts["error"]++
 				log.Error().
 					Err(ev).
 					Int("code", int(ev.Code())).
 					Msg("Kafka error")
+			default:
+				counts["other"]++
+			}
+			totalCounts = 0
+			for _, count := range counts {
+				totalCounts += count
+			}
+			if totalCounts%1000 == 0 {
+				log.Debug().Any("distribution", counts).Msg("producer-fallback-events")
+				counts = make(map[string]int) // Reset counts to avoid memory growth
 			}
 		}
 	}

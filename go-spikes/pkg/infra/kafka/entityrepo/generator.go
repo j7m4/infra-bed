@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	k "github.com/infra-bed/go-spikes/pkg/config/kafka"
-	"github.com/rs/zerolog/log"
+	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
 type PayloadSpecs struct {
@@ -38,7 +38,7 @@ func GeneratePayloads(ctx context.Context, cfg k.ProducerPluginConfig) (<-chan P
 	if cfg.EntityCount <= 0 || cfg.AttributeCount <= 0 {
 		return nil, fmt.Errorf("invalid configuration: all counts must be greater than zero")
 	}
-
+	log := logger.Ctx(ctx)
 	payloads := make(chan Payload)
 
 	go func() {
@@ -52,6 +52,7 @@ func GeneratePayloads(ctx context.Context, cfg k.ProducerPluginConfig) (<-chan P
 			entityIdx++
 			select {
 			case <-ctx.Done():
+				log.Info().Msg("payload-generation done")
 				return
 			default:
 				specs := PayloadSpecs{

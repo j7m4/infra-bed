@@ -9,24 +9,24 @@ import (
 	k "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/infra-bed/go-spikes/pkg/config"
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
-	"github.com/infra-bed/go-spikes/pkg/infra"
 	"github.com/infra-bed/go-spikes/pkg/logger"
-	"github.com/rs/zerolog"
+	"github.com/infra-bed/go-spikes/pkg/model"
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 )
 
-type ConsumerEngine[T any] interface {
-	Run(ctx context.Context) error
+type ConsumerJob[T any] interface {
+	Run(ctx context.Context)
 	Close()
-	AcceptMessage(message *k.Message) error
-	RejectMessage(message *k.Message) error
+	AcceptMessage(ctx context.Context, message *k.Message) error
+	RejectMessage(ctx context.Context, message *k.Message) error
 	GetMetadata() (*k.Metadata, error)
+	GetPlugin() model.Plugin
 }
 
-func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (ConsumerEngine[T], error) {
+func NewConsumerJob[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (model.Job, error) {
 	var err error
 	var consumer *k.Consumer
 
@@ -59,7 +59,7 @@ func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (Co
 		logBatchSize = config.DefaultLogBatchSize
 	}
 
-	return &consumerEngineImpl[T]{
+	return &consumerJobImpl[T]{
 		consumer:         consumer,
 		connectionConfig: cfg,
 		plugin:           plugin,
@@ -67,36 +67,40 @@ func NewConsumerEngine[T any](cfg cfg.KafkaConfig, plugin ConsumerPlugin[T]) (Co
 		tracer: otel.Tracer("KafkaConsumer"),
 		// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 		logBatchSize: logBatchSize,
-		log:          logger.Get(),
 	}, nil
 }
 
-type consumerEngineImpl[T any] struct {
+type consumerJobImpl[T any] struct {
 	consumer         *k.Consumer
 	connectionConfig cfg.KafkaConfig
 	plugin           ConsumerPlugin[T]
 	tracer           trace.Tracer
 	logBatchSize     int
-	log              *zerolog.Logger
 }
 
-func (c *consumerEngineImpl[T]) Close() {
+func (c *consumerJobImpl[T]) GetPlugin() model.Plugin {
+	return c.plugin
+}
+
+func (c *consumerJobImpl[T]) Close() {
+	log := logger.Get()
 	if err := c.consumer.Close(); err != nil {
-		c.log.Error().Err(err).Msg("Failed to close consumer")
+		log.Error().Err(err).Msg("Failed to close consumer")
 	} else {
-		c.log.Info().Msg("Consumer closed successfully")
+		log.Info().Msg("Consumer closed successfully")
 	}
 }
 
-func (c *consumerEngineImpl[T]) AcceptMessage(message *k.Message) error {
+func (c *consumerJobImpl[T]) AcceptMessage(ctx context.Context, message *k.Message) error {
+	log := logger.Ctx(ctx)
 	if message == nil {
-		c.log.Warn().Msg("Received nil message, cannot accept")
+		log.Warn().Msg("Received nil message, cannot accept")
 		return nil
 	}
 	// commit manually, if not auto-commit enabled
 	if !c.connectionConfig.ConsumerConfig.AutoCommitEnabled {
 		if _, err := c.consumer.CommitMessage(message); err != nil {
-			c.log.Error().
+			log.Error().
 				Err(err).
 				Int32("partition", message.TopicPartition.Partition).
 				Int64("offset", int64(message.TopicPartition.Offset)).
@@ -106,39 +110,37 @@ func (c *consumerEngineImpl[T]) AcceptMessage(message *k.Message) error {
 	return nil
 }
 
-func (c *consumerEngineImpl[T]) RejectMessage(message *k.Message) error {
+func (c *consumerJobImpl[T]) RejectMessage(ctx context.Context, message *k.Message) error {
+	log := logger.Ctx(ctx)
 	if message == nil {
-		c.log.Warn().Msg("Received nil message, cannot reject")
+		log.Warn().Msg("Received nil message, cannot reject")
 		return nil
 	}
 	return nil
 }
 
-func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
-
-	if c.plugin.GetInitialDelayDuration() > 0 {
-		select {
-		case <-infra.StartInitialDelayTimer(ctx, c.plugin):
-			c.log.Trace().Msg("Consumer initialDelay")
-		}
-	}
-	c.log.Trace().Msg("Consumer post-initialDelay")
+func (c *consumerJobImpl[T]) Run(ctx context.Context) {
+	log := logger.Ctx(ctx)
 
 	var msg *k.Message
 	var err error
 
-	c.log.Info().
+	log.Info().
 		Str("topic", c.connectionConfig.Topic).
 		Str("group", c.connectionConfig.ConsumerConfig.ConsumerGroup).
 		Msg("Starting consumer")
 
 	count := 0
 	batchConsumeMsg := fmt.Sprintf("kafka.consume.batch: %d", c.logBatchSize)
-	runTimer := infra.StartRunTimer(ctx, c.plugin)
-	intervalTimer := infra.NewIntervalTimer(ctx, c.plugin)
+	intervalTimer := model.NewIntervalTimer(ctx, c.plugin)
 
 	if err = c.consumer.SubscribeTopics([]string{c.connectionConfig.Topic}, nil); err != nil {
-		return err
+		log.Error().
+			Err(err).
+			Str("topic", c.connectionConfig.Topic).
+			Str("group", c.connectionConfig.ConsumerConfig.ConsumerGroup).
+			Msg("Failed to subscribe to topic")
+		return
 	}
 
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
@@ -159,17 +161,7 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 					Msg(batchConsumeMsg)
 			}
 			batchLog.Info().Int("count", count).Msg("consume context done")
-			return ctx.Err()
-		case <-runTimer:
-			if msg != nil {
-				batchLog.Info().
-					Int("count", count).
-					Int32("partition", msg.TopicPartition.Partition).
-					Int64("offset", int64(msg.TopicPartition.Offset)).
-					Msg(batchConsumeMsg)
-			}
-			batchLog.Info().Int("count", count).Msg("consume runTimer reached")
-			return nil
+			return
 		default:
 			batchLog.Trace().Msg("Consumer reading message")
 			msg, err = c.consumer.ReadMessage(100 * time.Millisecond)
@@ -211,6 +203,6 @@ func (c *consumerEngineImpl[T]) Run(ctx context.Context) error {
 	}
 }
 
-func (c *consumerEngineImpl[T]) GetMetadata() (*k.Metadata, error) {
+func (c *consumerJobImpl[T]) GetMetadata() (*k.Metadata, error) {
 	return c.consumer.GetMetadata(&c.connectionConfig.Topic, false, 5000)
 }

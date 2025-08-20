@@ -1,16 +1,18 @@
-package infra
+package model
 
 import (
 	"context"
 	"time"
 )
 
-type Engine interface {
+type Job interface {
 	Run(ctx context.Context)
 	Close()
+	GetPlugin() Plugin
 }
 
 type Plugin interface {
+	GetName() string
 	GetInitialDelayDuration() time.Duration
 	GetRunDuration() time.Duration
 	GetIntervalDuration() time.Duration

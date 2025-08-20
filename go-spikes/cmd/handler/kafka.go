@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -11,90 +10,51 @@ import (
 	infra "github.com/infra-bed/go-spikes/pkg/infra/kafka"
 	"github.com/infra-bed/go-spikes/pkg/infra/kafka/entityrepo"
 	"github.com/infra-bed/go-spikes/pkg/logger"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"github.com/infra-bed/go-spikes/pkg/model"
 )
 
 func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 	var err error
-	var producerPlugin *entityrepo.ProducerPlugin
-	var producerEngine infra.ProducerEngine[entityrepo.Payload]
-	var consumerPlugin *entityrepo.ConsumerPlugin
-	var consumerEngine infra.ConsumerEngine[entityrepo.Payload]
+	var producerJob model.Job
+	var consumerJob model.Job
 
 	testConfig := configManager.GetTests().EntityRepoConfig
 
 	kConfig := cfg.ApplyKafkaConfigOverrides(configManager.GetKafka(), testConfig.KafkaOverrides)
 
-	producerPlugin = entityrepo.NewProducerPlugin(
-		testConfig.PluginsConfig.ProducerPluginConfig,
-	)
-	if producerEngine, err = infra.NewProducerEngine[entityrepo.Payload](kConfig, producerPlugin); err != nil {
+	if producerJob, err = infra.NewProducerJob[entityrepo.Payload](
+		kConfig,
+		entityrepo.NewProducerPlugin(testConfig.PluginsConfig.ProducerPluginConfig),
+	); err != nil {
 		logger.Get().Error().Err(err).Msg("Failed to create producer engine")
 		http.Error(w, "Failed to create producer engine", http.StatusInternalServerError)
 		return
 	}
 
-	consumerPlugin = entityrepo.NewConsumerPlugin(
+	if consumerJob, err = infra.NewConsumerJob[entityrepo.Payload](kConfig, entityrepo.NewConsumerPlugin(
 		testConfig.PluginsConfig.ConsumerPluginConfig,
-	)
-	if consumerEngine, err = infra.NewConsumerEngine[entityrepo.Payload](kConfig, consumerPlugin); err != nil {
+	)); err != nil {
 		logger.Get().Error().Err(err).Msg("Failed to create consumer engine")
 		http.Error(w, "Failed to create consumer engine", http.StatusInternalServerError)
 		return
 	}
 
-	spanName := "EntityRepoTest"
-	callback := make(chan Response)
+	runner := model.NewRunner()
+	jobs := []model.Job{producerJob, consumerJob}
 
-	execute := func(ctx context.Context) {
-		log := logger.WithContext(ctx)
-		go func() {
-			producerEngine.Run(ctx)
-			defer producerEngine.Close()
-		}()
-		go func() {
-			err := consumerEngine.Run(ctx)
-			if err != nil {
-				log.Error().Err(err).Msg("Consumer Engine Run() error")
-			}
-			defer consumerEngine.Close()
-		}()
+	for _, job := range jobs {
+		runner.Start(context.Background(), job)
 	}
 
-	go func(callback chan Response) {
-		tracerName := "PerfRunner"
-		ctx := context.Background()
-		traceCtx, span := otel.Tracer(tracerName).Start(ctx, spanName)
-		spanCtx := trace.SpanContextFromContext(traceCtx)
-		traceId := ""
-		if spanCtx.IsValid() {
-			traceId = spanCtx.TraceID().String()
-		}
-		callback <- Response{
-			Message: fmt.Sprintf("Running %s", spanName),
-			TraceID: traceId,
-		}
-		close(callback)
-		log := logger.WithContext(traceCtx)
-		log.Info().Str("name", spanName).Msg("PerfRunner started")
+	var response = map[string]interface{}{
+		"jobs": []string{
+			producerJob.GetPlugin().GetName(),
+			consumerJob.GetPlugin().GetName(),
+		},
+		"startTime": time.Now(),
+	}
 
-		defer span.End()
-		go func() {
-			execute(traceCtx)
-		}()
-		for {
-			select {
-			case <-ctx.Done():
-				log.Info().Str("name", spanName).Msg("PerfRunner ended")
-				return
-			default:
-				time.Sleep(1 * time.Second)
-			}
-		}
-	}(callback)
-
-	if err = json.NewEncoder(w).Encode(<-callback); err != nil {
+	if err = json.NewEncoder(w).Encode(response); err != nil {
 		logger.Get().Error().Err(err).Msg("Failed to write response")
 		http.Error(w, "Failed to write response", http.StatusInternalServerError)
 		return

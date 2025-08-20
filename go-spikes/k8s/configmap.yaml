@@ -87,23 +87,25 @@ data:
       entityRepo:
         plugins:
           consumer:
+            jobName: "consumer-kafka-1"
             # 0 value means run indefinitely
-            runDuration: 2m
+            runDuration: 15m
             # 0 value means no initial delay
             initialDelayDuration: 0
             # 0 value means no pause between intervals
             intervalDuration: 0
-            logBatchSize: 1000
+            logBatchSize: 10000
           producer:
+            jobName: "producer-kafka-1"
             entityCount: 10
             attributeCount: 5
             # 0 value means run indefinitely
-            runDuration: 1m
+            runDuration: 15m
             # 0 value means no initial delay
             initialDelayDuration: 0
             # 0 value means no pause between intervals
             intervalDuration: 1ms
-            logBatchSize: 1000
+            logBatchSize: 10000
         kafkaOverrides:
           brokers:
           - persistent-cluster-kafka-bootstrap.streaming:9092
@@ -112,7 +114,7 @@ data:
             clientId: entity-repo-producer
             compressionType: snappy
             maxRetries: 3
-            logBatchSize: 1000
+            logBatchSize: 10000
           consumer:
             clientId: entity-repo-consumer
             isolationLevel: read_committed
@@ -120,4 +122,4 @@ data:
             autoCommitEnabled: true
             autoCommitInterval: 15s
             consumerGroup: entity-repo-consumer
-            logBatchSize: 1000
+            logBatchSize: 10000

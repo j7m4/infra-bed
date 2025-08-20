@@ -18,6 +18,10 @@ type ProducerPlugin struct {
 	logBatchSize int
 }
 
+func (p *ProducerPlugin) GetName() string {
+	return p.pluginCfg.JobName
+}
+
 func NewProducerPlugin(pluginCfg cfg.ProducerPluginConfig) *ProducerPlugin {
 	logBatchSize := pluginCfg.LogBatchSize
 	if logBatchSize <= 0 {
@@ -41,7 +45,7 @@ func (p *ProducerPlugin) GetIntervalDuration() time.Duration {
 	return p.pluginCfg.IntervalDuration
 }
 
-func (p *ProducerPlugin) ProduceMessageListener(ctx context.Context, engine infra.ProducerEngine[Payload], msg *k.Message) error {
+func (p *ProducerPlugin) ProduceMessageListener(ctx context.Context, engine infra.ProducerJob[Payload], msg *k.Message) error {
 	var err error
 	var payload Payload
 	log := logger.WithContext(ctx)
@@ -69,6 +73,10 @@ type ConsumerPlugin struct {
 	logBatchSize int
 }
 
+func (c *ConsumerPlugin) GetName() string {
+	return c.pluginCfg.JobName
+}
+
 func NewConsumerPlugin(pluginCfg cfg.ConsumerPluginConfig) *ConsumerPlugin {
 	logBatchSize := pluginCfg.LogBatchSize
 	if logBatchSize <= 0 {
@@ -81,7 +89,7 @@ func NewConsumerPlugin(pluginCfg cfg.ConsumerPluginConfig) *ConsumerPlugin {
 	}
 }
 
-func (c *ConsumerPlugin) ConsumeMessageHandler(ctx context.Context, engine infra.ConsumerEngine[Payload], msg *k.Message) error {
+func (c *ConsumerPlugin) ConsumeMessageHandler(ctx context.Context, engine infra.ConsumerJob[Payload], msg *k.Message) error {
 	var err error
 	var payload Payload
 	log := logger.WithContext(ctx)
@@ -89,7 +97,7 @@ func (c *ConsumerPlugin) ConsumeMessageHandler(ctx context.Context, engine infra
 		return err
 	}
 	c.entities[payload.EntityID] = &payload
-	if err = engine.AcceptMessage(msg); err != nil {
+	if err = engine.AcceptMessage(ctx, msg); err != nil {
 		log.Error().Err(err).Msg("Failed to commit message")
 	}
 	c.counter++

@@ -8,7 +8,8 @@ import (
 )
 
 type ProducerPlugin[T any] interface {
-	ProduceMessageListener(ctx context.Context, engine ProducerEngine[T], message *k.Message) error
+	GetName() string
+	ProduceMessageListener(ctx context.Context, engine ProducerJob[T], message *k.Message) error
 	Payloads(ctx context.Context) (<-chan T, error)
 	GetInitialDelayDuration() time.Duration
 	GetRunDuration() time.Duration
@@ -16,7 +17,8 @@ type ProducerPlugin[T any] interface {
 }
 
 type ConsumerPlugin[T any] interface {
-	ConsumeMessageHandler(ctx context.Context, engine ConsumerEngine[T], message *k.Message) error
+	GetName() string
+	ConsumeMessageHandler(ctx context.Context, engine ConsumerJob[T], message *k.Message) error
 	GetInitialDelayDuration() time.Duration
 	GetRunDuration() time.Duration
 	GetIntervalDuration() time.Duration

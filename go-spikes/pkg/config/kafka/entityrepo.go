@@ -18,6 +18,7 @@ type PluginsConfig struct {
 // * RunDuration - the total duration to run the ProducerEngine
 // * IntervalDuration - the interval between producing payloads
 type ProducerPluginConfig struct {
+	JobName              string        `mapstructure:"jobName"`
 	EntityCount          int           `mapstructure:"entityCount"`
 	AttributeCount       int           `mapstructure:"attributeCount"`
 	InitialDelayDuration time.Duration `mapstructure:"initialDelayDuration"`
@@ -30,6 +31,7 @@ type ProducerPluginConfig struct {
 // * RunDuration - the total duration to run the ProducerEngine
 // * IntervalDuration - the interval between producing payloads
 type ConsumerPluginConfig struct {
+	JobName              string        `mapstructure:"jobName"`
 	InitialDelayDuration time.Duration `mapstructure:"initialDelayDuration"`
 	RunDuration          time.Duration `mapstructure:"runDuration"`
 	IntervalDuration     time.Duration `mapstructure:"intervalDuration"`
