@@ -71,17 +71,69 @@ data:
       }
     }
     
-    discovery.kubernetes "go_pods" {
-        role = "pod"
-    
-        selectors {
-          role  = "pod"
-          label = "app.kubernetes.io/name=op-hello-world"
-        }
+    // Service discovery for Prometheus metrics
+    discovery.kubernetes "services" {
+        role = "service"
+    }
+
+    discovery.relabel "prometheus_services" {
+      targets = discovery.kubernetes.services.targets
+
+      // Only keep services that have prometheus.io/scrape annotation set to true
+      rule {
+        source_labels = ["__meta_kubernetes_service_annotation_prometheus_io_scrape"]
+        action        = "keep"
+        regex         = "true"
+      }
+
+      // Use custom port if specified
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_service_annotation_prometheus_io_port"]
+        action        = "replace"
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+        replacement   = "$1:$2"
+        target_label  = "__address__"
+      }
+
+      // Use custom path if specified, default to /metrics
+      rule {
+        source_labels = ["__meta_kubernetes_service_annotation_prometheus_io_path"]
+        action        = "replace"
+        target_label  = "__metrics_path__"
+        regex         = "(.+)"
+      }
+
+      // Use custom scheme if specified, default to http
+      rule {
+        source_labels = ["__meta_kubernetes_service_annotation_prometheus_io_scheme"]
+        action        = "replace"
+        target_label  = "__scheme__"
+        regex         = "(https?)"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        action = "replace"
+        target_label = "namespace"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_service_name"]
+        action = "replace"
+        target_label = "service"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_service_name"]
+        action = "replace"
+        target_label = "job"
+        separator = "/"
+        replacement = "$1/$2"
+      }
     }
     
-    discovery.relabel "go_pods" {
-      targets = discovery.kubernetes.go_pods.targets
+    discovery.relabel "pyro_pods" {
+      targets = discovery.kubernetes.all_pods.targets
 
       rule {
         source_labels = ["__meta_kubernetes_pod_annotation_pyroscope_io_scrape"]
@@ -238,7 +290,9 @@ data:
     }
     
     prometheus.scrape "default" {
-      targets = discovery.relabel.all_pods.output
+      targets = discovery.relabel.prometheus_services.output
+      
+      scheme = "http"
 
       forward_to = [prometheus.remote_write.mimir.receiver]
 
@@ -254,8 +308,10 @@ data:
     }
     
     pyroscope.scrape "go_pods" {
-      targets = discovery.relabel.go_pods.output
+      targets = discovery.relabel.pyro_pods.output
       forward_to = [pyroscope.write.default.receiver]
+      
+      scheme = "http"
     
       profiling_config {
         profile.process_cpu {
@@ -286,6 +342,9 @@ data:
     otelcol.exporter.otlp "lgtm" {
       client {
         endpoint = "lgtm.observability.svc.cluster.local:4317"
+        tls {
+          insecure = true
+        }
       }
     }
 

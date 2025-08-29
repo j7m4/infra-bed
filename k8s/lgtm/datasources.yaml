@@ -30,19 +30,19 @@ data:
             datasourceUid: prometheus
           tracesToProfiles:
             datasourceUid: pyroscope
-      - name: Pyroscope
+      - name: Pyroscope (external)
         type: grafana-pyroscope-datasource
-        uid: pyroscope
+        uid: pyroscope-ext
         access: proxy
         url: http://pyroscope.observability:4040
-        isDefault: false
+        isDefault: true
         editable: true
-      - name: Mimir
+      - name: Mimir (external)
         type: prometheus
-        uid: mimir
+        uid: mimir-ext
         access: proxy
         url: http://mimir.observability:9009/prometheus
-        isDefault: false
+        isDefault: true
         editable: true
         jsonData:
           exemplarTraceIdDestinations:

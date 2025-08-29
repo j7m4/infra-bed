@@ -61,7 +61,7 @@ data:
       enableProfiling: true
       enableTracing: true
       enableMetrics: true
-      logLevel: debug
+      logLevel: info
       experimental:
         asyncProcessing: false
         cacheWarmup: false
