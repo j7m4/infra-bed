@@ -11,11 +11,9 @@ import (
 	"github.com/infra-bed/go-spikes/pkg/config"
 	cfg "github.com/infra-bed/go-spikes/pkg/config/kafka"
 	"github.com/infra-bed/go-spikes/pkg/logger"
+	"github.com/infra-bed/go-spikes/pkg/metrics"
 	"github.com/infra-bed/go-spikes/pkg/model"
-	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
-	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
+	"github.com/infra-bed/go-spikes/pkg/tracing"
 )
 
 type ProducerJob[T any] interface {
@@ -49,9 +47,6 @@ func NewProducerJob[T any](cfg cfg.KafkaConfig, plugin ProducerPlugin[T]) (model
 		config:       cfg,
 		deliveryChan: make(chan k.Event, 1000),
 		plugin:       plugin,
-		// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
-		tracer: otel.Tracer("KafkaProducer"),
-		// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 		logBatchSize: logBatchSize,
 	}, nil
 }
@@ -61,7 +56,6 @@ type producerJobImpl[T any] struct {
 	config       cfg.KafkaConfig
 	deliveryChan chan k.Event
 	plugin       ProducerPlugin[T]
-	tracer       trace.Tracer
 	logBatchSize int
 }
 
@@ -92,14 +86,16 @@ func (p *producerJobImpl[T]) Close() {
 }
 
 func (p *producerJobImpl[T]) producePayloads(ctx context.Context, payloadChan <-chan T) error {
-	log := logger.Ctx(ctx)
-
 	count := 0
 	batchProduceMsg := fmt.Sprintf("kafka.produce.batch: %d", p.logBatchSize)
 
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
-	batchCtx, batchSpan := p.tracer.Start(ctx, batchProduceMsg)
-	log = logger.Ctx(batchCtx)
+	batchCtx, batchSpan := tracing.StartSpanWithAttributes(
+		ctx, 
+		"kafka.producer.batch",
+		tracing.KafkaAttributes(p.config.Topic, "0", "produce"),
+	)
+	log := logger.Ctx(batchCtx)
 	defer batchSpan.End()
 	// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 
@@ -116,16 +112,24 @@ func (p *producerJobImpl[T]) producePayloads(ctx context.Context, payloadChan <-
 			log.Info().Msg("producer done: producePayloads")
 			return ctx.Err()
 		default:
-			if err := p.producePayloadAsync(payload); err != nil {
+			if err := p.producePayloadAsync(batchCtx, payload); err != nil {
 				log.Error().Err(err).Msg("Failed to produce payload")
+				metrics.KafkaProduceErrors.WithLabelValues(p.config.Topic, "produce_error").Inc()
 				continue
 			}
 			count++
+			metrics.KafkaMessagesProduced.WithLabelValues(p.config.Topic, "0").Inc()
+			
 			if count%p.logBatchSize == 0 {
 				// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR kafka
 				// close out old and create new span
 				batchSpan.End()
-				batchCtx, batchSpan = p.tracer.Start(ctx, batchProduceMsg)
+				batchCtx, batchSpan = tracing.StartSpanWithAttributes(
+					ctx, 
+					"kafka.producer.batch",
+					tracing.KafkaAttributes(p.config.Topic, "0", "produce"),
+				)
+				log = logger.Ctx(batchCtx)
 				// CROSS-CUTTING END OF otel-tracing CONFIGURATION FOR kafka
 				log.Info().Int("count", count).Msg(batchProduceMsg)
 			}
@@ -141,11 +145,22 @@ func (p *producerJobImpl[T]) producePayloads(ctx context.Context, payloadChan <-
 // producePayloadAsync produces a single payload asynchronously.
 // It marshals the payload to JSON, computes a SHA-256 hash for the key.
 // An alternative would be to produce messages transactionally.
-func (p *producerJobImpl[T]) producePayloadAsync(payload interface{}) error {
+func (p *producerJobImpl[T]) producePayloadAsync(ctx context.Context, payload interface{}) error {
+	ctx, span := tracing.StartSpanWithAttributes(
+		ctx,
+		"kafka.producer.message",
+		tracing.KafkaAttributes(p.config.Topic, "any", "produce"),
+	)
+	defer span.End()
+
 	data, err := json.Marshal(payload)
 	if err != nil {
+		tracing.RecordError(span, err, "Failed to marshal payload")
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
+
+	// Record message size
+	metrics.KafkaMessageSize.WithLabelValues(p.config.Topic, "produce").Observe(float64(len(data)))
 
 	key := sha256.New().Sum(data)
 	msg := &k.Message{
@@ -157,7 +172,13 @@ func (p *producerJobImpl[T]) producePayloadAsync(payload interface{}) error {
 		Value: data,
 	}
 
-	return p.producer.Produce(msg, p.deliveryChan)
+	if err := p.producer.Produce(msg, p.deliveryChan); err != nil {
+		tracing.RecordError(span, err, "Failed to produce message to Kafka")
+		return err
+	}
+
+	tracing.AddSpanEvent(span, "message.produced")
+	return nil
 }
 
 func (p *producerJobImpl[T]) messageDeliveryEventHandler(ctx context.Context) {
@@ -179,10 +200,12 @@ func (p *producerJobImpl[T]) messageDeliveryEventHandler(ctx context.Context) {
 						Err(ev.TopicPartition.Error).
 						Str("key", string(ev.Key)).
 						Msg("Delivery failed")
+					metrics.KafkaProduceErrors.WithLabelValues(p.config.Topic, "delivery_failed").Inc()
 				} else {
 					err := p.plugin.ProduceMessageListener(ctx, p, ev)
 					if err != nil {
 						log.Error().Err(err).Msg("Failed on ProduceMessageListener")
+						metrics.KafkaProduceErrors.WithLabelValues(p.config.Topic, "listener_error").Inc()
 					}
 				}
 			default:

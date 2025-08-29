@@ -7,10 +7,44 @@ data:
   datasources.yaml: |
     apiVersion: 1
     datasources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://localhost:3100
+        isDefault: false
+        editable: true
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        url: http://localhost:3200
+        isDefault: false
+        editable: true
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+          tracesToMetrics:
+            datasourceUid: prometheus
+          serviceMap:
+            datasourceUid: prometheus
+          tracesToProfiles:
+            datasourceUid: pyroscope
       - name: Pyroscope
         type: grafana-pyroscope-datasource
         uid: pyroscope
-        url: http://pyroscope:4040
         access: proxy
-        isDefault: true
+        url: http://pyroscope.observability:4040
+        isDefault: false
         editable: true
+      - name: Mimir
+        type: prometheus
+        uid: mimir
+        access: proxy
+        url: http://mimir.observability:9009/prometheus
+        isDefault: false
+        editable: true
+        jsonData:
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: tempo

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mimir
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mimir
+  template:
+    metadata:
+      labels:
+        app: mimir
+    spec:
+      containers:
+      - name: mimir
+        image: grafana/mimir:2.14.0
+        args:
+        - -config.file=/etc/mimir/mimir.yaml
+        - -target=all
+        ports:
+        - containerPort: 9009
+          name: http
+        - containerPort: 9095
+          name: grpc
+        volumeMounts:
+        - name: mimir-config
+          mountPath: /etc/mimir
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: mimir-config
+        configMap:
+          name: mimir-config

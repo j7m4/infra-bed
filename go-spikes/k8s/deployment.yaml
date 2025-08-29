@@ -15,6 +15,10 @@ spec:
       annotations:
         # Annotations for identification
         app: go-spikes
+        # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
+        pyroscope.io/scrape: "true"
+        pyroscope.io/port: "6060"
+        # CROSS-CUTTING END OF pyroscope CONFIGURATION FOR go-spikes
     spec:
       containers:
       - name: go-spikes
@@ -23,6 +27,10 @@ spec:
         ports:
         - containerPort: 8888
           name: http
+        # CROSS-CUTTING START OF otel-metrics CONFIGURATION FOR go-spikes
+        - containerPort: 8080
+          name: metrics
+        # CROSS-CUTTING END OF otel-metrics CONFIGURATION FOR go-spikes
         # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
         - containerPort: 6060
           name: pprof
@@ -76,6 +84,15 @@ kind: Service
 metadata:
   name: go-spikes
   namespace: default
+  # CROSS-CUTTING START OF otel-metrics CONFIGURATION FOR go-spikes
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+    prometheus.io/scheme: "http"
+    pyroscope.io/scrape: "true"
+    pyroscope.io/port: "6060"
+  # CROSS-CUTTING END OF otel-metrics CONFIGURATION FOR go-spikes
 spec:
   selector:
     app: go-spikes
@@ -83,6 +100,11 @@ spec:
   - name: http
     port: 8888
     targetPort: 8888
+  # CROSS-CUTTING START OF otel-metrics CONFIGURATION FOR go-spikes
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+  # CROSS-CUTTING END OF otel-metrics CONFIGURATION FOR go-spikes
   # CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
   - name: pprof
     port: 6060

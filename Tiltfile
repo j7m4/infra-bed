@@ -39,17 +39,29 @@ k8s_resource('pyroscope',
 )
 
 k8s_yaml([
-    'k8s/alloy/configmap.yaml',
+    'k8s/alloy/config-configmap.yaml',
+    'k8s/alloy/rbac.yaml',
+    'k8s/alloy/service.yaml',
     'k8s/alloy/deployment.yaml'
 ])
 k8s_resource('alloy',
     labels=['o11y'],
-    resource_deps=['lgtm', 'pyroscope']
+    resource_deps=['lgtm', 'pyroscope', 'mimir']
 )
 
 k8s_yaml('k8s/kube-state-metrics.yaml')
 k8s_resource('kube-state-metrics',
     port_forwards=['8080:8080'],
+    labels=['o11y']
+)
+
+k8s_yaml([
+    'k8s/mimir/config-configmap.yaml',
+    'k8s/mimir/service.yaml',
+    'k8s/mimir/deployment.yaml'
+])
+k8s_resource('mimir',
+    port_forwards=['9009:9009'],
     labels=['o11y']
 )
 
@@ -112,6 +124,7 @@ local_resource('deploy-all-exporters',
 # Deploy Grafana dashboards
 local_resource('deploy-grafana-dashboards',
     cmd='''
+    kubectl apply -f k8s/grafana-dashboards/go-spikes-dashboard.yaml
     kubectl apply -f k8s/grafana-dashboards/kafka-dashboard.yaml
     kubectl apply -f k8s/grafana-dashboards/mysql-dashboard.yaml
     kubectl apply -f k8s/grafana-dashboards/postgres-dashboard.yaml
@@ -125,19 +138,31 @@ local_resource('deploy-grafana-dashboards',
 
 # Print cluster info
 print("""
-🚀 OpenTelemetry Profiling with Grafana Pyroscope
+🚀 Comprehensive Observability with LGTM + Pyroscope
 
 Access points:
 - Grafana UI: http://localhost:3000 (admin/admin)
-- Tempo: http://localhost:3200
-- Pyroscope: http://localhost:4040
+- Tempo (traces): http://localhost:3200  
+- Pyroscope (profiles): http://localhost:4040
 - OTLP endpoint: localhost:4317
+
+Go-spikes endpoints:
+- Application API: http://localhost:8888
+- Prometheus metrics: http://localhost:8080/metrics
+- pprof profiling: http://localhost:6060/debug/pprof/
+
+Telemetry features:
+- ✅ Distributed tracing with OpenTelemetry
+- ✅ Prometheus metrics collection
+- ✅ Continuous profiling with Pyroscope
+- ✅ Structured logging with trace correlation
+- ✅ Full observability stack integration
 
 Next steps:
 1. Wait for all resources to be ready
-2. Access Grafana to verify LGTM stack is working
-3. Sample app is running with pprof enabled on port 6060
-4. View profiles in Grafana Pyroscope (integrated in LGTM stack)
+2. Use 'telemetry' label commands to test observability
+3. View metrics, traces, and profiles in Grafana
+4. Test trace-to-profile correlation
 """)
 
 ##################################################
@@ -172,9 +197,9 @@ k8s_yaml([
     'go-spikes/k8s/configmap.yaml',
     'go-spikes/k8s/deployment.yaml'
 ])
-# Allows API and pprof on a single pod
+# Allows API, metrics, and pprof on a single pod
 k8s_resource('go-spikes',
-    port_forwards=['8888:8888', '6060:6060'],
+    port_forwards=['8888:8888', '8080:8080', '6060:6060'],
     labels=['spikes'],
     resource_deps=['alloy']
 )
@@ -190,6 +215,50 @@ local_resource('run-fibonacci',
 local_resource('run-entity-repo-kafka',
     cmd='curl http://localhost:8888/kafka/entity-repo',
     labels=['spikes'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# Telemetry testing commands
+local_resource('check-metrics',
+    cmd='curl http://localhost:8080/metrics',
+    labels=['telemetry'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('check-health',
+    cmd='curl http://localhost:8888/health',
+    labels=['telemetry'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('check-config',
+    cmd='curl http://localhost:8888/config',
+    labels=['telemetry'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('check-tracing-feature',
+    cmd='curl http://localhost:8888/config/feature/tracing',
+    labels=['telemetry'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+local_resource('run-fibonacci-multiple',
+    cmd='for i in {30..35}; do curl "http://localhost:8888/cpu/fibonacci/$i"; sleep 1; done',
+    labels=['telemetry'],
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False
+)
+
+# pprof endpoints
+local_resource('check-pprof',
+    cmd='curl http://localhost:6060/debug/pprof/',
+    labels=['telemetry'],
     trigger_mode=TRIGGER_MODE_MANUAL,
     auto_init=False
 )

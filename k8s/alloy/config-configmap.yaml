@@ -1,0 +1,315 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: observability
+data:
+  config.alloy: |
+    ////////////////////////////////////////////////////////////////////////////
+    // Alloy Log Settings
+    logging {
+      level = "debug"
+      format = "json"
+    }
+    
+    ///////////////////////////////////////////////////////////////////////////
+    // Kubernetes Discovery and Relabeling
+    
+    discovery.kubernetes "all_pods" {
+        role = "pod"
+    }
+    
+    discovery.relabel "all_pods" {
+      targets = discovery.kubernetes.all_pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        action = "replace"
+        target_label = "namespace"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        action = "replace"
+        target_label = "pod"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        action = "replace"
+        target_label = "container"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        action = "replace"
+        target_label = "app"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+        action = "replace"
+        target_label = "job"
+        separator = "/"
+        replacement = "$1"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+        action = "replace"
+        target_label = "__path__"
+        separator = "/"
+        replacement = "/var/log/pods/*$1/*.log"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_id"]
+        action = "replace"
+        target_label = "container_runtime"
+        regex = "^(\\S+):\\/\\/.+$"
+        replacement = "$1"
+      }
+    }
+    
+    discovery.kubernetes "go_pods" {
+        role = "pod"
+    
+        selectors {
+          role  = "pod"
+          label = "app.kubernetes.io/name=op-hello-world"
+        }
+    }
+    
+    discovery.relabel "go_pods" {
+      targets = discovery.kubernetes.go_pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_pyroscope_io_scrape"]
+        action        = "keep"
+        regex         = "true"
+      }
+    
+      rule {
+        source_labels = ["__address__", "__meta_kubernetes_pod_annotation_pyroscope_io_port"]
+        action        = "replace"
+        regex         = "([^:]+)(?::\\d+)?;(\\d+)" // Captures host with annotated port
+        replacement   = "$1:$2"
+        target_label  = "__address__"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        action = "replace"
+        target_label = "namespace"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        action = "replace"
+        target_label = "pod"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        action = "replace"
+        target_label = "container"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+        action = "replace"
+        target_label = "app"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+        action = "replace"
+        target_label = "job"
+        separator = "/"
+        replacement = "$1"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+        action = "replace"
+        target_label = "__path__"
+        separator = "/"
+        replacement = "/var/log/pods/*$1/*.log"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_id"]
+        action = "replace"
+        target_label = "container_runtime"
+        regex = "^(\\S+):\\/\\/.+$"
+        replacement = "$1"
+      }
+    }
+    
+    ///////////////////////////////////////////////////////////////////////////
+    // Loki
+    
+    loki.write "default" {
+      endpoint {
+        url = "http://lgtm.observability.svc.cluster.local:3100/loki/api/v1/push"
+      }
+    }
+    
+    
+    loki.source.kubernetes "pod_logs" {
+      targets    = discovery.relabel.all_pods.output
+      forward_to = [loki.process.pod_logs.receiver]
+    }
+
+    loki.process "pod_logs" {
+      stage.static_labels {
+          values = {
+            cluster = "LOCAL",
+          }
+      }
+
+      // Extract trace context from JSON logs for trace correlation
+      stage.json {
+        expressions = {
+          trace_id = "traceID",
+          span_id = "spanID",
+          level = "level",
+          msg = "msg",
+        }
+      }
+
+      // Add trace context as labels for correlation
+      stage.labels {
+        values = {
+          trace_id = "",
+          span_id = "",
+        }
+      }
+
+      forward_to = [loki.write.default.receiver]
+    }
+    
+    local.file_match "node_logs" {
+      path_targets = [{
+          // Monitor syslog to scrape node-logs
+          __path__  = "/var/log/syslog",
+          job       = "node/syslog",
+          node_name = sys.env("HOSTNAME"),
+          cluster   = "LOCAL",
+      }]
+    }
+
+    loki.source.file "node_logs" {
+      targets    = local.file_match.node_logs.targets
+      forward_to = [loki.write.default.receiver]
+    }
+    
+    loki.source.kubernetes_events "cluster_events" {
+      job_name   = "integrations/kubernetes/eventhandler"
+      log_format = "logfmt"
+      forward_to = [
+        loki.process.cluster_events.receiver,
+      ]
+    }
+
+    loki.process "cluster_events" {
+      forward_to = [loki.write.default.receiver]
+
+      stage.static_labels {
+        values = {
+          cluster = "LOCAL",
+        }
+      }
+
+      stage.labels {
+        values = {
+          kubernetes_cluster_events = "job",
+        }
+      }
+    }
+    
+    ///////////////////////////////////////////////////////////////////////////
+    // Mimir (Prometheus)
+    
+    prometheus.remote_write "mimir" {
+      endpoint {
+        url = "http://mimir.observability:9009/api/v1/push"
+      }
+    }
+    
+    prometheus.scrape "default" {
+      targets = discovery.relabel.all_pods.output
+
+      forward_to = [prometheus.remote_write.mimir.receiver]
+
+    }
+    
+    ////////////////////////////////////////////////////////////////////////////
+    // Pyroscope
+    
+    pyroscope.write "default" {
+      endpoint {
+        url = "http://pyroscope.observability.svc.cluster.local:4040"
+      }
+    }
+    
+    pyroscope.scrape "go_pods" {
+      targets = discovery.relabel.go_pods.output
+      forward_to = [pyroscope.write.default.receiver]
+    
+      profiling_config {
+        profile.process_cpu {
+          enabled = true
+        }
+        profile.block {
+          enabled = true
+        }
+        profile.memory {
+          enabled = true
+        }
+        profile.mutex {
+          enabled = true
+        }
+        profile.fgprof {
+          // requires another dependency: github.com/pyroscope-io/fgprof
+          enabled = false 
+        }
+        profile.goroutine {
+          enabled = true
+        }
+      }
+    }
+    
+    ////////////////////////////////////////////////////////////////////////////
+    // OTEL
+    
+    otelcol.exporter.otlp "lgtm" {
+      client {
+        endpoint = "lgtm.observability.svc.cluster.local:4317"
+      }
+    }
+
+    otelcol.receiver.otlp "default" {
+      grpc { 
+        endpoint = "0.0.0.0:4317" 
+      }
+      
+      http { 
+        endpoint = "0.0.0.0:4318"
+      }
+
+      output {
+        metrics = [otelcol.processor.batch.default.input]
+        logs    = [otelcol.processor.batch.default.input]
+        traces  = [otelcol.processor.batch.default.input]
+      }
+    }
+    
+    
+    otelcol.processor.batch "default" {
+      output {
+        metrics = [otelcol.exporter.otlp.lgtm.input]
+        logs    = [otelcol.exporter.otlp.lgtm.input]
+        traces  = [otelcol.exporter.otlp.lgtm.input]
+      }
+    }

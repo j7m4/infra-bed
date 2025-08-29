@@ -10,7 +10,7 @@ import (
 	k "github.com/infra-bed/go-spikes/pkg/config/kafka"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/rs/zerolog/log"
+	"github.com/infra-bed/go-spikes/pkg/logger"
 	"github.com/spf13/viper"
 )
 
@@ -101,7 +101,7 @@ func NewConfigManager(configPath string) (*ConfigManager, error) {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("error reading config file: %w", err)
 		}
-		log.Warn().Msg("Config file not found, using defaults")
+		logger.Get().Warn().Msg("Config file not found, using defaults")
 	}
 
 	if err := cm.v.Unmarshal(cm.config); err != nil {
@@ -125,29 +125,29 @@ func (cm *ConfigManager) watchConfigFile(configPath string) {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create file watcher")
+		logger.Get().Error().Err(err).Msg("Failed to create file watcher")
 		return
 	}
 	defer func(watcher *fsnotify.Watcher) {
 		err := watcher.Close()
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to close file watcher")
+			logger.Get().Error().Err(err).Msg("Failed to close file watcher")
 		} else {
-			log.Debug().Msg("File watcher closed successfully")
+			logger.Get().Debug().Msg("File watcher closed successfully")
 		}
 	}(watcher)
 
 	// Watch the directory containing the config file
 	if err := watcher.Add(dir); err != nil {
-		log.Error().Err(err).Str("dir", dir).Msg("Failed to watch config directory")
+		logger.Get().Error().Err(err).Str("dir", dir).Msg("Failed to watch config directory")
 		return
 	}
 
-	log.Info().Str("path", configPath).Str("dir", dir).Msg("Watching config file for changes")
+	logger.Get().Info().Str("path", configPath).Str("dir", dir).Msg("Watching config file for changes")
 
 	// Also try to watch the file directly (for non-Kubernetes environments)
 	if err := watcher.Add(configPath); err != nil {
-		log.Debug().Err(err).Str("file", configPath).Msg("Could not watch file directly, watching directory only")
+		logger.Get().Debug().Err(err).Str("file", configPath).Msg("Could not watch file directly, watching directory only")
 	}
 
 	for {
@@ -157,7 +157,7 @@ func (cm *ConfigManager) watchConfigFile(configPath string) {
 				return
 			}
 
-			log.Debug().
+			logger.Get().Debug().
 				Str("event", event.String()).
 				Str("name", event.Name).
 				Str("op", event.Op.String()).
@@ -168,14 +168,14 @@ func (cm *ConfigManager) watchConfigFile(configPath string) {
 			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
 				// Check if the event is related to our config file or the data directory
 				if event.Name == configPath || filepath.Base(event.Name) == "..data" || event.Name == filepath.Join(dir, "..data") {
-					log.Info().Str("event", event.String()).Msg("Config file change detected")
+					logger.Get().Info().Str("event", event.String()).Msg("Config file change detected")
 
 					// Small delay to ensure the file write is complete
 					time.Sleep(100 * time.Millisecond)
 
 					// Re-read the config
 					if err := cm.reloadFromFile(configPath); err != nil {
-						log.Error().Err(err).Msg("Failed to reload config")
+						logger.Get().Error().Err(err).Msg("Failed to reload config")
 					}
 				}
 			}
@@ -184,7 +184,7 @@ func (cm *ConfigManager) watchConfigFile(configPath string) {
 			if !ok {
 				return
 			}
-			log.Error().Err(err).Msg("File watcher error")
+			logger.Get().Error().Err(err).Msg("File watcher error")
 		}
 	}
 }
@@ -205,7 +205,7 @@ func (cm *ConfigManager) reloadFromFile(configPath string) error {
 	if err := newViper.ReadInConfig(); err != nil {
 		// Check if file exists - it might be in the middle of being updated
 		if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
-			log.Debug().Msg("Config file temporarily missing, likely being updated")
+			logger.Get().Debug().Msg("Config file temporarily missing, likely being updated")
 			return nil
 		}
 		return fmt.Errorf("error reading updated config: %w", err)
@@ -222,21 +222,21 @@ func (cm *ConfigManager) reloadFromFile(configPath string) error {
 	cm.config = newConfig
 	cm.v = newViper
 
-	log.Info().Msg("Configuration reloaded successfully from file")
+	logger.Get().Info().Msg("Configuration reloaded successfully from file")
 
 	// Notify callbacks
 	for _, callback := range cm.changeCallbacks {
 		go func(cb func(*Config)) {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Error().Interface("panic", r).Msg("Panic in config change callback")
+					logger.Get().Error().Interface("panic", r).Msg("Panic in config change callback")
 				}
 			}()
 			cb(newConfig)
 		}(callback)
 	}
 
-	log.Debug().
+	logger.Get().Debug().
 		Interface("old", oldConfig).
 		Interface("new", newConfig).
 		Msg("Configuration updated")
@@ -299,27 +299,27 @@ func (cm *ConfigManager) reload() {
 
 	newConfig := &Config{}
 	if err := cm.v.Unmarshal(newConfig); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal new config, keeping old config")
+		logger.Get().Error().Err(err).Msg("Failed to unmarshal new config, keeping old config")
 		return
 	}
 
 	oldConfig := cm.config
 	cm.config = newConfig
 
-	log.Info().Msg("Configuration reloaded successfully")
+	logger.Get().Info().Msg("Configuration reloaded successfully")
 
 	for _, callback := range cm.changeCallbacks {
 		go func(cb func(*Config)) {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Error().Interface("panic", r).Msg("Panic in config change callback")
+					logger.Get().Error().Interface("panic", r).Msg("Panic in config change callback")
 				}
 			}()
 			cb(newConfig)
 		}(callback)
 	}
 
-	log.Debug().
+	logger.Get().Debug().
 		Interface("old", oldConfig).
 		Interface("new", newConfig).
 		Msg("Configuration updated")

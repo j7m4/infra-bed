@@ -10,6 +10,7 @@ import (
 	infra "github.com/infra-bed/go-spikes/pkg/infra/kafka"
 	"github.com/infra-bed/go-spikes/pkg/infra/kafka/entityrepo"
 	"github.com/infra-bed/go-spikes/pkg/logger"
+	"github.com/infra-bed/go-spikes/pkg/metrics"
 	"github.com/infra-bed/go-spikes/pkg/model"
 )
 
@@ -42,7 +43,11 @@ func EntityRepoTest(w http.ResponseWriter, r *http.Request) {
 	runner := model.NewRunner()
 	jobs := []model.Job{producerJob, consumerJob}
 
+	// Track active jobs
 	for _, job := range jobs {
+		jobType := job.GetPlugin().GetName()
+		metrics.ActiveJobs.WithLabelValues(jobType).Inc()
+		metrics.JobExecutions.WithLabelValues(jobType, "started").Inc()
 		runner.Start(context.Background(), job)
 	}
 

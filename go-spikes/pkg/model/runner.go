@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/infra-bed/go-spikes/pkg/logger"
-	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -35,11 +34,11 @@ func (r *runnerImpl) Start(ctx context.Context, job Job) {
 	if job.GetPlugin().GetInitialDelayDuration() > 0 {
 		select {
 		case <-delayTimer(job.GetPlugin().GetInitialDelayDuration()):
-			log.Trace().
+			logger.Ctx(ctx).Debug().
 				Str("job-name", job.GetPlugin().GetName()).
 				Msg("initial-delay")
 		}
-		log.Trace().
+		logger.Ctx(ctx).Debug().
 			Str("job-name", job.GetPlugin().GetName()).
 			Msg("post-initial-delay")
 	}

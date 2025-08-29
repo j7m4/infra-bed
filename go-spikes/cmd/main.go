@@ -7,6 +7,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -15,38 +16,14 @@ import (
 	"github.com/grafana/pyroscope-go"
 	"github.com/infra-bed/go-spikes/cmd/handler"
 	"github.com/infra-bed/go-spikes/pkg/config"
+	"github.com/infra-bed/go-spikes/pkg/logger"
+	"github.com/infra-bed/go-spikes/pkg/metrics"
+	"github.com/infra-bed/go-spikes/pkg/tracing"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
-
-	"github.com/infra-bed/go-spikes/pkg/logger"
 )
 
-func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
-	exporter, err := otlptrace.New(ctx, otlptracegrpc.NewClient(
-		otlptracegrpc.WithEndpoint(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
-		otlptracegrpc.WithInsecure(),
-	))
-	if err != nil {
-		return nil, err
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("go-spikes"),
-			semconv.ServiceVersion("1.0.0"),
-		)),
-	)
-
-	otel.SetTracerProvider(tp)
-	return tp, nil
-}
 
 func initPyroscope() {
 	pyroscope.Start(pyroscope.Config{
@@ -87,8 +64,12 @@ func main() {
 	cfgManager, err := config.NewConfigManager(configPath)
 	if err != nil {
 		log.Warn().Err(err).Str("path", configPath).Msg("Failed to load config, using defaults")
-		// Create config manager with defaults if file doesn't exist
-		cfgManager, _ = config.NewConfigManager("/tmp/nonexistent.yaml")
+		// Create empty config file and retry
+		os.WriteFile("/tmp/default.yaml", []byte{}, 0644)
+		cfgManager, err = config.NewConfigManager("/tmp/default.yaml")
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to create default config manager")
+		}
 	}
 
 	// Store config manager for use by handlers
@@ -110,18 +91,36 @@ func main() {
 
 	logger.SetLogLevel(cfg.Features.LogLevel)
 
+	// CROSS-CUTTING START OF otel-metrics CONFIGURATION FOR go-spikes
+	// Initialize metrics system
+	metrics.RecordApplicationInfo("1.0.0", runtime.Version())
+	startTime := time.Now()
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				metrics.UpdateApplicationUptime(time.Since(startTime).Seconds())
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	// CROSS-CUTTING END OF otel-metrics CONFIGURATION FOR go-spikes
+
 	// CROSS-CUTTING START OF otel-tracing CONFIGURATION FOR go-spikes
 	// Initialize tracing if enabled
-	var tp *sdktrace.TracerProvider
+	var shutdownTracer func(context.Context) error
 	if cfg.Features.EnableTracing {
-		tp, err = initTracer(ctx)
+		shutdownTracer, err = tracing.InitTracer(ctx, "go-spikes")
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to initialize tracer")
 		} else {
-			defer tp.Shutdown(ctx)
+			defer shutdownTracer(ctx)
 			// CROSS-CUTTING START OF pyroscope CONFIGURATION FOR go-spikes
 			// Wrap tracer provider for Pyroscope integration
-			otel.SetTracerProvider(otelpyroscope.NewTracerProvider(tp))
+			otel.SetTracerProvider(otelpyroscope.NewTracerProvider(otel.GetTracerProvider()))
 			// CROSS-CUTTING END OF pyroscope CONFIGURATION FOR go-spikes
 
 			// CROSS-CUTTING START OF otel-logging CONFIGURATION FOR go-spikes
@@ -151,6 +150,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.Use(otelmux.Middleware("go-spikes"))
+	r.Use(handler.HTTPMetricsMiddleware)
 
 	// Health check
 	r.HandleFunc("/health", handler.Health).Methods("GET")
@@ -187,6 +187,23 @@ func main() {
 		Dur("idleTimeout", cfg.Server.IdleTimeout).
 		Msg("Starting go-spikes")
 
+	// CROSS-CUTTING START OF otel-metrics CONFIGURATION FOR go-spikes
+	// Create and start metrics server on port 8080
+	metricsRouter := mux.NewRouter()
+	metricsRouter.Handle("/metrics", promhttp.Handler()).Methods("GET")
+	metricsSrv := &http.Server{
+		Addr:    ":8080",
+		Handler: metricsRouter,
+	}
+
+	go func() {
+		log.Info().Str("port", "8080").Msg("Starting metrics server")
+		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("Metrics server failed to start")
+		}
+	}()
+	// CROSS-CUTTING END OF otel-metrics CONFIGURATION FOR go-spikes
+
 	// Start server in a goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -205,10 +222,16 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Shutdown server
+	// Shutdown servers
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("Server forced to shutdown")
 	}
+	
+	// CROSS-CUTTING START OF otel-metrics CONFIGURATION FOR go-spikes
+	if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("Metrics server forced to shutdown")
+	}
+	// CROSS-CUTTING END OF otel-metrics CONFIGURATION FOR go-spikes
 
 	// Shutdown OTEL logging
 	if err := logger.ShutdownOTEL(shutdownCtx); err != nil {

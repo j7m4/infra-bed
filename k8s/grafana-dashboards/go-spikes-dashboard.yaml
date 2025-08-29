@@ -1,0 +1,335 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-spikes-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  go-spikes-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "Go Spikes Application Metrics",
+        "uid": "go-spikes-metrics",
+        "tags": ["go-spikes", "application", "observability"],
+        "timezone": "browser",
+        "refresh": "30s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "title": "Application Info",
+            "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "go_spikes_application_info",
+                "refId": "A",
+                "legendFormat": "Version: {{version}}, Go: {{go_version}}"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {"mode": "palette-classic"},
+                "custom": {"displayMode": "table"},
+                "mappings": [],
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": null}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "title": "Application Uptime (seconds)",
+            "gridPos": {"h": 6, "w": 8, "x": 0, "y": 4},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "go_spikes_application_uptime_seconds",
+                "refId": "A"
+              }
+            ],
+            "unit": "s"
+          },
+          {
+            "title": "HTTP Requests/sec",
+            "gridPos": {"h": 6, "w": 8, "x": 8, "y": 4},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_http_requests_total[5m])",
+                "refId": "A"
+              }
+            ],
+            "unit": "reqps"
+          },
+          {
+            "title": "Active HTTP Requests",
+            "gridPos": {"h": 6, "w": 8, "x": 16, "y": 4},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(go_spikes_http_requests_in_flight)",
+                "refId": "A"
+              }
+            ]
+          },
+          {
+            "title": "HTTP Request Rate by Endpoint",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_http_requests_total[5m])",
+                "refId": "A",
+                "legendFormat": "{{method}} {{endpoint}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Requests/sec",
+                "unit": "reqps"
+              }
+            ]
+          },
+          {
+            "title": "HTTP Status Codes",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_http_requests_total[5m])",
+                "refId": "A",
+                "legendFormat": "{{status_code}} {{endpoint}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Requests/sec",
+                "unit": "reqps"
+              }
+            ]
+          },
+          {
+            "title": "HTTP Request Duration (95th percentile)",
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(go_spikes_http_request_duration_seconds_bucket[5m]))",
+                "refId": "A",
+                "legendFormat": "95th percentile {{method}} {{endpoint}}"
+              },
+              {
+                "expr": "histogram_quantile(0.50, rate(go_spikes_http_request_duration_seconds_bucket[5m]))",
+                "refId": "B",
+                "legendFormat": "50th percentile {{method}} {{endpoint}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Duration",
+                "unit": "s"
+              }
+            ]
+          },
+          {
+            "title": "Fibonacci Computations/sec",
+            "gridPos": {"h": 6, "w": 8, "x": 0, "y": 26},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_fibonacci_computations_total[5m])",
+                "refId": "A"
+              }
+            ],
+            "unit": "cps"
+          },
+          {
+            "title": "Fibonacci Computation Errors/sec",
+            "gridPos": {"h": 6, "w": 8, "x": 8, "y": 26},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_fibonacci_computation_errors_total[5m])",
+                "refId": "A"
+              }
+            ],
+            "unit": "cps",
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": null},
+                    {"color": "yellow", "value": 0.1},
+                    {"color": "red", "value": 1}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "title": "Active Jobs",
+            "gridPos": {"h": 6, "w": 8, "x": 16, "y": 26},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum by (job_type) (go_spikes_active_jobs)",
+                "refId": "A",
+                "legendFormat": "{{job_type}}"
+              }
+            ]
+          },
+          {
+            "title": "Fibonacci Computation Duration by Input",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(go_spikes_fibonacci_computation_duration_seconds_bucket[5m]))",
+                "refId": "A",
+                "legendFormat": "95th percentile (n={{input_value}})"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Duration",
+                "unit": "s"
+              }
+            ]
+          },
+          {
+            "title": "Job Execution Rate",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_job_executions_total[5m])",
+                "refId": "A",
+                "legendFormat": "{{job_type}} ({{status}})"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Executions/sec",
+                "unit": "cps"
+              }
+            ]
+          },
+          {
+            "title": "Kafka Message Production Rate",
+            "gridPos": {"h": 6, "w": 8, "x": 0, "y": 40},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_kafka_messages_produced_total[5m])",
+                "refId": "A"
+              }
+            ],
+            "unit": "mps"
+          },
+          {
+            "title": "Kafka Production Errors/sec",
+            "gridPos": {"h": 6, "w": 8, "x": 8, "y": 40},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_kafka_produce_errors_total[5m])",
+                "refId": "A"
+              }
+            ],
+            "unit": "eps",
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": null},
+                    {"color": "yellow", "value": 0.1},
+                    {"color": "red", "value": 1}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "title": "Kafka Message Consumption Rate",
+            "gridPos": {"h": 6, "w": 8, "x": 16, "y": 40},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_kafka_messages_consumed_total[5m])",
+                "refId": "A"
+              }
+            ],
+            "unit": "mps"
+          },
+          {
+            "title": "Kafka Message Size Distribution",
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 46},
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(go_spikes_kafka_message_size_bytes_bucket[5m]))",
+                "refId": "A",
+                "legendFormat": "95th percentile {{topic}} ({{direction}})"
+              },
+              {
+                "expr": "histogram_quantile(0.50, rate(go_spikes_kafka_message_size_bytes_bucket[5m]))",
+                "refId": "B",
+                "legendFormat": "50th percentile {{topic}} ({{direction}})"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Message Size",
+                "unit": "bytes"
+              }
+            ]
+          },
+          {
+            "title": "Configuration Feature Flags",
+            "gridPos": {"h": 6, "w": 12, "x": 0, "y": 54},
+            "type": "table",
+            "targets": [
+              {
+                "expr": "go_spikes_config_feature_flags",
+                "refId": "A",
+                "format": "table"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {
+                    "Time": true,
+                    "__name__": true
+                  },
+                  "renameByName": {
+                    "feature_name": "Feature",
+                    "Value": "Enabled"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "title": "Configuration Reload Rate",
+            "gridPos": {"h": 6, "w": 12, "x": 12, "y": 54},
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(go_spikes_config_reloads_total[5m])",
+                "refId": "A",
+                "legendFormat": "{{status}}"
+              }
+            ],
+            "unit": "cps"
+          }
+        ]
+      }
+    }

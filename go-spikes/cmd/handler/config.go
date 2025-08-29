@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/infra-bed/go-spikes/pkg/config"
 	"github.com/infra-bed/go-spikes/pkg/logger"
+	"github.com/infra-bed/go-spikes/pkg/metrics"
 )
 
 var configManager *config.ConfigManager
@@ -62,6 +63,13 @@ func CheckFeature(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response["enabled"] = enabled
+
+	// Update feature flag metrics
+	if enabled {
+		metrics.ConfigFeatureFlags.WithLabelValues(feature).Set(1)
+	} else {
+		metrics.ConfigFeatureFlags.WithLabelValues(feature).Set(0)
+	}
 
 	log.Info().
 		Str("feature", feature).
